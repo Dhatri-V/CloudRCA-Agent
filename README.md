@@ -201,3 +201,27 @@ Incident
 Currently under development.
 
 Development is being tracked through GitHub Issues, with each component implemented and tested independently before end-to-end integration.
+
+## Dataset validation
+
+Issue #1 validates AIOps2025 without committing its large raw archives. The compatibility decision and provenance are documented in:
+
+- [`docs/dataset-validation/aiops2025-compatibility.md`](docs/dataset-validation/aiops2025-compatibility.md)
+- [`docs/dataset-validation/provenance.md`](docs/dataset-validation/provenance.md)
+
+Create a Python 3.12 environment and install the validation dependencies:
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -e '.[dev]'
+```
+
+Profile an extracted subset and reproduce topology evidence:
+
+```bash
+.venv/bin/python scripts/validate_aiops2025_subset.py data/extracted/aiops2025 \
+  --profile-output reports/aiops2025_sample_profile.json \
+  --topology-output reports/aiops2025_topology_evidence.json
+```
+
+Raw data belongs under `data/raw/` and extracted data under `data/extracted/`; both paths are ignored by Git. The committed fixtures are reduced and sanitized derivatives for deterministic testing only.

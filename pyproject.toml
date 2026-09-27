@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cloudrca-dataset-validation"
+version = "0.1.0"
+description = "Deterministic AIOps2025 dataset profiling for CloudRCA-Agent Issue #1"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "charset-normalizer>=3.4,<4",
+  "polars>=1.30,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "jupyter>=1.1,<2",
+  "nbformat>=5.10,<6",
+  "pytest>=8,<10",
+]
+
+[project.scripts]
+cloudrca-profile = "cloudrca_dataset_validation.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
