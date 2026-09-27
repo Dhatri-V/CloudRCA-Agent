@@ -10,6 +10,7 @@ from .profiler import profile_directory
 
 
 def main() -> None:
+    """Profile the requested directory and write deterministic JSON output."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, help="Directory containing extracted validation files")
     parser.add_argument("--output", type=Path, required=True, help="JSON profile output path")

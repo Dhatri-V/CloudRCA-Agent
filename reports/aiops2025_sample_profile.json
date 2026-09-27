@@ -3154,8 +3154,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -3235,8 +3235,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -3316,8 +3316,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -3397,8 +3397,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -3478,8 +3478,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -3559,8 +3559,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -3640,8 +3640,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -3721,8 +3721,8 @@
           "non_null": 30219
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 30219
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -3802,8 +3802,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -3883,8 +3883,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -3964,8 +3964,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -4045,8 +4045,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -4126,8 +4126,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -4207,8 +4207,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -4288,8 +4288,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -4369,8 +4369,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -8461,8 +8461,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -8542,8 +8542,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -8623,8 +8623,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -8704,8 +8704,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -8785,8 +8785,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -8866,8 +8866,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -8947,8 +8947,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -9028,8 +9028,8 @@
           "non_null": 30219
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 30219
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -9109,8 +9109,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -9190,8 +9190,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -9271,8 +9271,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -9352,8 +9352,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -9433,8 +9433,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -9514,8 +9514,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -9595,8 +9595,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -9676,8 +9676,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -13695,8 +13695,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -13776,8 +13776,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -13857,8 +13857,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -13938,8 +13938,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -14019,8 +14019,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -14100,8 +14100,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -14181,8 +14181,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -14262,8 +14262,8 @@
           "non_null": 30219
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 30219
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -14343,8 +14343,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -14424,8 +14424,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -14505,8 +14505,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -14586,8 +14586,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -14667,8 +14667,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -14748,8 +14748,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -14829,8 +14829,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -14910,8 +14910,8 @@
           "non_null": 15829
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 15829
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -15720,8 +15720,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -15801,8 +15801,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -15882,8 +15882,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -15963,8 +15963,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -16044,8 +16044,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -16125,8 +16125,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -16206,8 +16206,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -16287,8 +16287,8 @@
           "non_null": 10073
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 10073
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -16360,16 +16360,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -16449,8 +16449,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -16530,8 +16530,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -16611,8 +16611,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -16684,16 +16684,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 7195
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 7195
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 7195
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -16765,16 +16765,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -16854,8 +16854,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -16927,16 +16927,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -17008,16 +17008,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -17089,16 +17089,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 14390
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 14390
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 14390
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -17170,16 +17170,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -17251,16 +17251,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -17332,16 +17332,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -17413,16 +17413,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -17494,16 +17494,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -17575,16 +17575,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -17656,16 +17656,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -17737,16 +17737,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -17818,16 +17818,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -17907,8 +17907,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -17988,8 +17988,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -18069,8 +18069,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -18150,8 +18150,8 @@
           "non_null": 5756
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 5756
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -18231,8 +18231,8 @@
           "non_null": 92096
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 92096
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -18312,8 +18312,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -18393,8 +18393,8 @@
           "non_null": 60438
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 60438
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -18474,8 +18474,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -18555,8 +18555,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -18636,8 +18636,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -18717,8 +18717,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -18798,8 +18798,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -18871,16 +18871,16 @@
       "format": "parquet",
       "identifier_coverage": {
         "instance": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         },
         "object_type": {
           "distinct": 1,
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -18960,8 +18960,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -19041,8 +19041,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -19122,8 +19122,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,
@@ -19203,8 +19203,8 @@
           "non_null": 1439
         },
         "pod": {
-          "distinct": 1,
-          "non_null": 1439
+          "distinct": 0,
+          "non_null": 0
         }
       },
       "malformed_records": 0,

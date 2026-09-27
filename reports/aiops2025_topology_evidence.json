@@ -187,7 +187,9 @@
   "tidb_rows_with_explicit_pod_and_node": 0,
   "topology_status": "PARTIAL",
   "unverified_relationships": [
-    "TiDB/TiKV/PD component -> Kubernetes worker VM"
+    "pd component -> Kubernetes worker VM",
+    "tidb component -> Kubernetes worker VM",
+    "tikv component -> Kubernetes worker VM"
   ],
   "verified_relationships": [
     "redis-cart pod -> Kubernetes worker VM"

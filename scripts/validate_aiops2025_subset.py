@@ -13,12 +13,14 @@ from cloudrca_dataset_validation import extract_database_placements, profile_dir
 
 
 def _safe(value):
+    """Serialize UTC-aware datetimes used in topology intervals."""
     if isinstance(value, datetime):
         return value.isoformat().replace("+00:00", "Z")
     raise TypeError(type(value).__name__)
 
 
 def topology_evidence(root: Path) -> dict:
+    """Build topology conclusions from relationships explicit in ``root``."""
     placements = []
     candidate_files = sorted(root.rglob("infra_pod_pod_cpu_usage*.parquet")) + sorted(root.rglob("log_filebeat*.parquet"))
     for path in candidate_files:
@@ -41,11 +43,26 @@ def topology_evidence(root: Path) -> dict:
                 & ~pl.col("kubernetes_node").cast(pl.String).str.to_lowercase().is_in(["null", "", "none"])
             ).height
 
+    observed_components = {item["database_component_id"] for item in placements}
+    for path in tidb_files:
+        if path.name.startswith("infra_tidb"):
+            observed_components.add("tidb")
+        elif path.name.startswith("infra_tikv"):
+            observed_components.add("tikv")
+        elif path.name.startswith("infra_pd"):
+            observed_components.add("pd")
+    mapped_components = {item["database_component_id"] for item in placements}
+    unmapped_components = observed_components - mapped_components
+    status = "VERIFIED" if mapped_components and not unmapped_components else "PARTIAL" if mapped_components else "NOT AVAILABLE"
     redis_nodes = sorted({item["vm_node_id"] for item in placements if item["database_component_id"] == "redis-cart"})
     return {
-        "topology_status": "PARTIAL",
-        "verified_relationships": ["redis-cart pod -> Kubernetes worker VM"],
-        "unverified_relationships": ["TiDB/TiKV/PD component -> Kubernetes worker VM"],
+        "topology_status": status,
+        "verified_relationships": [
+            f"{component} pod -> Kubernetes worker VM" for component in sorted(mapped_components)
+        ],
+        "unverified_relationships": [
+            f"{component} component -> Kubernetes worker VM" for component in sorted(unmapped_components)
+        ],
         "redis_vm_nodes": redis_nodes,
         "redis_rescheduling_observed": len(redis_nodes) > 1,
         "tidb_metric_files": len(tidb_files),
@@ -57,6 +74,7 @@ def topology_evidence(root: Path) -> dict:
 
 
 def main() -> None:
+    """Write profiling and topology evidence for an extracted subset."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
     parser.add_argument("--profile-output", type=Path, required=True)
@@ -64,8 +82,14 @@ def main() -> None:
     args = parser.parse_args()
     args.profile_output.parent.mkdir(parents=True, exist_ok=True)
     args.topology_output.parent.mkdir(parents=True, exist_ok=True)
-    args.profile_output.write_text(json.dumps(profile_directory(args.source), indent=2, sort_keys=True, default=_safe) + "\n")
-    args.topology_output.write_text(json.dumps(topology_evidence(args.source), indent=2, sort_keys=True, default=_safe) + "\n")
+    args.profile_output.write_text(
+        json.dumps(profile_directory(args.source), indent=2, sort_keys=True, default=_safe) + "\n",
+        encoding="utf-8",
+    )
+    args.topology_output.write_text(
+        json.dumps(topology_evidence(args.source), indent=2, sort_keys=True, default=_safe) + "\n",
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":

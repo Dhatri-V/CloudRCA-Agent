@@ -23,15 +23,18 @@ IDENTIFIER_COLUMNS = (
     "spanID",
 )
 TIMESTAMP_COLUMNS = ("time", "@timestamp", "startTimeMillis", "start_time", "end_time")
+MISSING_STRINGS = ["", "null", "none", "nan"]
 
 
 def _json_safe(value: Any) -> Any:
+    """Convert timestamp values into deterministic UTC JSON strings."""
     if isinstance(value, datetime):
         return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
     return value
 
 
 def _text_encoding(path: Path) -> dict[str, Any]:
+    """Detect a text file's encoding and return serializable metadata."""
     match = from_bytes(path.read_bytes()).best()
     if match is None:
         return {"encoding": None, "encoding_confidence": 0.0}
@@ -42,11 +45,13 @@ def _text_encoding(path: Path) -> dict[str, Any]:
 
 
 def _read_frame(path: Path) -> tuple[pl.DataFrame, dict[str, Any]]:
-    if path.suffix == ".parquet":
+    """Read a supported source while normalizing heterogeneous JSON values."""
+    suffix = path.suffix.lower()
+    if suffix == ".parquet":
         return pl.read_parquet(path), {"encoding": "binary/parquet", "encoding_confidence": 1.0}
     encoding = _text_encoding(path)
     text = path.read_text(encoding=encoding["encoding"] or "utf-8")
-    if path.suffix == ".jsonl":
+    if suffix == ".jsonl":
         records = [json.loads(line) for line in text.splitlines() if line.strip()]
     else:
         parsed = json.loads(text)
@@ -73,6 +78,7 @@ def _read_frame(path: Path) -> tuple[pl.DataFrame, dict[str, Any]]:
 
 
 def _timestamp_profile(frame: pl.DataFrame) -> dict[str, Any]:
+    """Summarize recognized timestamp columns and their timezone metadata."""
     result: dict[str, Any] = {}
     for column in TIMESTAMP_COLUMNS:
         if column not in frame.columns:
@@ -107,7 +113,7 @@ def profile_file(path: str | Path, *, relative_to: str | Path | None = None) -> 
     display = source.relative_to(relative_to) if relative_to else source
     base: dict[str, Any] = {
         "path": display.as_posix(),
-        "format": source.suffix.removeprefix("."),
+        "format": source.suffix.lower().removeprefix("."),
         "size_bytes": source.stat().st_size,
         "malformed_records": 0,
     }
@@ -123,15 +129,18 @@ def profile_file(path: str | Path, *, relative_to: str | Path | None = None) -> 
         sentinel_nulls = 0
         if dtype == pl.String:
             sentinel_nulls = frame.select(
-                pl.col(column).fill_null("").str.strip_chars().str.to_lowercase().is_in(["", "null", "none", "nan"]).sum()
+                pl.col(column).fill_null("").str.strip_chars().str.to_lowercase().is_in(MISSING_STRINGS).sum()
             ).item() - physical_nulls
         missing_counts[column] = int(physical_nulls + max(sentinel_nulls, 0))
     identifiers: dict[str, Any] = {}
     for column in IDENTIFIER_COLUMNS:
         if column in frame.columns:
+            values = frame[column].drop_nulls()
+            if frame.schema[column] == pl.String:
+                values = values.filter(~values.str.strip_chars().str.to_lowercase().is_in(MISSING_STRINGS))
             identifiers[column] = {
-                "non_null": frame[column].drop_nulls().len(),
-                "distinct": frame[column].drop_nulls().n_unique(),
+                "non_null": values.len(),
+                "distinct": values.n_unique(),
             }
     return {
         **base,
@@ -150,6 +159,8 @@ def profile_file(path: str | Path, *, relative_to: str | Path | None = None) -> 
 def profile_directory(path: str | Path) -> dict[str, Any]:
     """Profile every supported file below a directory in lexical order."""
     root = Path(path)
+    if not root.is_dir():
+        raise NotADirectoryError(f"Dataset source is not a directory: {root}")
     files = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES)
     profiles = [profile_file(file, relative_to=root) for file in files]
     return {

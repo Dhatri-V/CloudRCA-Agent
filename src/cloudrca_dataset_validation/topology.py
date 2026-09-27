@@ -12,10 +12,12 @@ DATABASE_POD = re.compile(r"(?i)(?:^|[-_])(redis|tidb|tikv|tiflash|pd)(?:[-_]|$)
 
 
 def _field(frame: pl.DataFrame, candidates: tuple[str, ...]) -> str | None:
+    """Return the first candidate column present in the frame."""
     return next((candidate for candidate in candidates if candidate in frame.columns), None)
 
 
 def _component(pod: str) -> str:
+    """Derive a stable database component label from an explicit pod ID."""
     lower = pod.lower()
     for component in ("redis-cart", "tidb-tikv", "tidb-tidb", "tidb-pd", "tikv", "tiflash", "redis"):
         if component in lower:
@@ -37,22 +39,40 @@ def extract_database_placements(
     """
     time_column = _field(frame, ("time", "@timestamp"))
     pod_column = _field(frame, ("pod", "k8_pod"))
-    node_column = _field(frame, ("k8_node_name", "vm_node_id"))
-    if node_column is None and "instance" in frame.columns and "object_type" in frame.columns:
-        types = frame["object_type"].drop_nulls().unique().to_list()
-        if types and set(types) == {"pod"}:
-            node_column = "instance"
-    if not all((time_column, pod_column, node_column)):
+    node_column = _field(frame, ("k8_node_name", "vm_node_id", "kubernetes_node"))
+    row_filter = pl.lit(True)
+    node_expression = pl.col(node_column).cast(pl.String) if node_column else None
+    if "instance" in frame.columns and "object_type" in frame.columns:
+        pod_row = pl.col("object_type").cast(pl.String).str.to_lowercase() == "pod"
+        if node_expression is None:
+            node_expression = pl.col("instance").cast(pl.String)
+            row_filter = pod_row
+        else:
+            explicit_missing = (
+                node_expression.fill_null("").str.strip_chars().str.to_lowercase().is_in(["", "null", "none", "nan"])
+            )
+            node_expression = (
+                pl.when(explicit_missing & pod_row)
+                .then(pl.col("instance").cast(pl.String))
+                .otherwise(node_expression)
+            )
+    if not time_column or not pod_column or node_expression is None:
         return []
 
     explicit = (
-        frame.select(
+        frame.filter(row_filter).select(
             pl.col(time_column).alias("timestamp"),
             pl.col(pod_column).cast(pl.String).alias("database_pod_id"),
-            pl.col(node_column).cast(pl.String).alias("vm_node_id"),
+            node_expression.alias("vm_node_id"),
         )
         .drop_nulls()
-        .filter(pl.col("database_pod_id").map_elements(lambda value: bool(DATABASE_POD.search(value)), return_dtype=pl.Boolean))
+        .filter(
+            ~pl.col("database_pod_id").str.strip_chars().str.to_lowercase().is_in(["", "null", "none", "nan"])
+            & ~pl.col("vm_node_id").str.strip_chars().str.to_lowercase().is_in(["", "null", "none", "nan"])
+            & pl.col("database_pod_id").map_elements(
+                lambda value: bool(DATABASE_POD.search(value)), return_dtype=pl.Boolean
+            )
+        )
         .sort(["database_pod_id", "timestamp"])
     )
     if explicit.is_empty():
