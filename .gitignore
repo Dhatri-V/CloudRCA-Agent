@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
+*.py[cod]
+
+# AIOps2025 raw/extracted data is large and must never be committed.
+data/raw/**
+data/extracted/**
+!data/raw/.gitkeep
+!data/extracted/.gitkeep

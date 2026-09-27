@@ -1,0 +1,20 @@
+[
+  {
+    "uuid": "fixture-case-1",
+    "fault_category": "stress test",
+    "fault_type": "memory stress",
+    "instance_type": "service",
+    "instance": "adservice",
+    "start_time": "2025-04-26T19:10:15Z",
+    "end_time": "2025-04-26T19:40:15Z"
+  },
+  {
+    "uuid": "fixture-case-2",
+    "fault_category": "pod fault",
+    "fault_type": "pod failure",
+    "instance_type": "service",
+    "instance": "recommendationservice",
+    "start_time": "2025-04-29T06:10:42Z",
+    "end_time": "2025-04-29T06:38:42Z"
+  }
+]

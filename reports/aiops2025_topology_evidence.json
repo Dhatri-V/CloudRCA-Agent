@@ -1,0 +1,197 @@
+{
+  "inference_policy": "A relationship is emitted only when one record contains timestamp, database pod ID, and worker-node ID.",
+  "placements": [
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case1/metric-parquet/infra/infra_pod/infra_pod_pod_cpu_usage_2025-04-27.parquet",
+      "valid_from_utc": "2025-04-26T16:00:00Z",
+      "valid_to_utc": "2025-04-27T15:59:00Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case2/metric-parquet/infra/infra_pod/infra_pod_pod_cpu_usage_2025-04-29.parquet",
+      "valid_from_utc": "2025-04-28T16:00:00Z",
+      "valid_to_utc": "2025-04-29T15:59:00Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "normal/metric-parquet/infra/infra_pod/infra_pod_pod_cpu_usage_2025-04-30.parquet",
+      "valid_from_utc": "2025-04-29T16:00:00Z",
+      "valid_to_utc": "2025-04-30T15:59:00Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case1/log-parquet/log_filebeat-server_2025-04-27_03-59-00.parquet",
+      "valid_from_utc": "2025-04-26T19:05:57.807000Z",
+      "valid_to_utc": "2025-04-26T19:05:59.174000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case1/log-parquet/log_filebeat-server_2025-04-27_03-59-00.parquet",
+      "valid_from_utc": "2025-04-26T19:12:31.798000Z",
+      "valid_to_utc": "2025-04-26T19:12:33.390000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case1/log-parquet/log_filebeat-server_2025-04-27_03-59-00.parquet",
+      "valid_from_utc": "2025-04-26T19:18:50.138000Z",
+      "valid_to_utc": "2025-04-26T19:18:51.579000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case1/log-parquet/log_filebeat-server_2025-04-27_03-59-00.parquet",
+      "valid_from_utc": "2025-04-26T19:25:28.740000Z",
+      "valid_to_utc": "2025-04-26T19:25:30.381000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case1/log-parquet/log_filebeat-server_2025-04-27_03-59-00.parquet",
+      "valid_from_utc": "2025-04-26T19:32:00.395000Z",
+      "valid_to_utc": "2025-04-26T19:32:01.882000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case1/log-parquet/log_filebeat-server_2025-04-27_03-59-00.parquet",
+      "valid_from_utc": "2025-04-26T19:44:47.867000Z",
+      "valid_to_utc": "2025-04-26T19:44:49.374000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case1/log-parquet/log_filebeat-server_2025-04-27_03-59-00.parquet",
+      "valid_from_utc": "2025-04-26T19:57:56.250000Z",
+      "valid_to_utc": "2025-04-26T19:57:57.688000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case2/log-parquet/log_filebeat-server_2025-04-29_14-59-00.parquet",
+      "valid_from_utc": "2025-04-29T06:03:08.031000Z",
+      "valid_to_utc": "2025-04-29T06:03:10.488000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case2/log-parquet/log_filebeat-server_2025-04-29_14-59-00.parquet",
+      "valid_from_utc": "2025-04-29T06:08:11.089000Z",
+      "valid_to_utc": "2025-04-29T06:08:13.682000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case2/log-parquet/log_filebeat-server_2025-04-29_14-59-00.parquet",
+      "valid_from_utc": "2025-04-29T06:13:14.034000Z",
+      "valid_to_utc": "2025-04-29T06:13:16.389000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case2/log-parquet/log_filebeat-server_2025-04-29_14-59-00.parquet",
+      "valid_from_utc": "2025-04-29T06:18:17.083000Z",
+      "valid_to_utc": "2025-04-29T06:18:19.886000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case2/log-parquet/log_filebeat-server_2025-04-29_14-59-00.parquet",
+      "valid_from_utc": "2025-04-29T06:23:20.075000Z",
+      "valid_to_utc": "2025-04-29T06:23:22.778000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case2/log-parquet/log_filebeat-server_2025-04-29_14-59-00.parquet",
+      "valid_from_utc": "2025-04-29T06:28:23.066000Z",
+      "valid_to_utc": "2025-04-29T06:28:25.495000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case2/log-parquet/log_filebeat-server_2025-04-29_14-59-00.parquet",
+      "valid_from_utc": "2025-04-29T06:33:26.064000Z",
+      "valid_to_utc": "2025-04-29T06:33:27.985000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case2/log-parquet/log_filebeat-server_2025-04-29_14-59-00.parquet",
+      "valid_from_utc": "2025-04-29T06:38:28.013000Z",
+      "valid_to_utc": "2025-04-29T06:38:30.474000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case2/log-parquet/log_filebeat-server_2025-04-29_14-59-00.parquet",
+      "valid_from_utc": "2025-04-29T06:43:31.095000Z",
+      "valid_to_utc": "2025-04-29T06:43:33.382000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case2/log-parquet/log_filebeat-server_2025-04-29_14-59-00.parquet",
+      "valid_from_utc": "2025-04-29T06:48:34.098000Z",
+      "valid_to_utc": "2025-04-29T06:48:36.689000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case2/log-parquet/log_filebeat-server_2025-04-29_14-59-00.parquet",
+      "valid_from_utc": "2025-04-29T06:53:37.014000Z",
+      "valid_to_utc": "2025-04-29T06:53:39.477000Z",
+      "vm_node_id": "aiops-k8s-08"
+    },
+    {
+      "database_component_id": "redis-cart",
+      "database_pod_id": "redis-cart-0",
+      "mapping_source": "case2/log-parquet/log_filebeat-server_2025-04-29_14-59-00.parquet",
+      "valid_from_utc": "2025-04-29T06:58:40.097000Z",
+      "valid_to_utc": "2025-04-29T06:58:42.487000Z",
+      "vm_node_id": "aiops-k8s-08"
+    }
+  ],
+  "redis_rescheduling_observed": false,
+  "redis_vm_nodes": [
+    "aiops-k8s-08"
+  ],
+  "tidb_metric_files": 44,
+  "tidb_metric_rows": 244630,
+  "tidb_rows_with_explicit_pod_and_node": 0,
+  "topology_status": "PARTIAL",
+  "unverified_relationships": [
+    "pd component -> Kubernetes worker VM",
+    "tidb component -> Kubernetes worker VM",
+    "tikv component -> Kubernetes worker VM"
+  ],
+  "verified_relationships": [
+    "redis-cart pod -> Kubernetes worker VM"
+  ]
+}

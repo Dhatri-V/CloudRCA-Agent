@@ -1,0 +1,12 @@
+{
+  "fixture_status": "derived-and-sanitized",
+  "source": "Official AIOpsChallenge2025-Sample repository, commit 82afa405c8f0ff4fb008678906601820a96db9b2",
+  "source_url": "https://www.aiops.cn/gitlab/aiops-live-benchmark/aiopschallengedata2025-sample",
+  "transformations": [
+    "Reduced to representative rows",
+    "Replaced IP addresses and Kubernetes node names",
+    "Replaced log message content",
+    "Replaced incident UUIDs"
+  ],
+  "warning": "These fixtures preserve relevant field names and types but are not original records and must not be used as benchmark results."
+}
