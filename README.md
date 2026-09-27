@@ -225,3 +225,7 @@ Profile an extracted subset and reproduce topology evidence:
 ```
 
 Raw data belongs under `data/raw/` and extracted data under `data/extracted/`; both paths are ignored by Git. The committed fixtures are reduced and sanitized derivatives for deterministic testing only.
+
+## JCode and model compatibility
+
+Issue #2 pins JCode `v0.88.0` and records the Qwen/GLM-5.3 compatibility decision in [`docs/architecture/0001-jcode-model-compatibility.md`](docs/architecture/0001-jcode-model-compatibility.md). The included smoke runner uses isolated temporary configuration, accepts credentials only through named environment variables, and validates structured model output. Live provider calls are optional and were not claimed without credentials.
