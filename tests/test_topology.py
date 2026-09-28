@@ -5,7 +5,6 @@ import polars as pl
 
 from cloudrca_dataset_validation.topology import extract_database_placements
 
-
 FIXTURES = Path(__file__).parent / "fixtures" / "aiops2025"
 
 

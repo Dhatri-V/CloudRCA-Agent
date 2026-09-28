@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 from typing import Any
-import re
 
 import polars as pl
 

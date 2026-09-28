@@ -7,13 +7,15 @@ at runtime so credentials never enter source control.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import json
 import os
-from pathlib import Path
 import subprocess
 import tempfile
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Mapping, Sequence
+
+ExpectedType = type[Any] | tuple[type[Any], ...]
 
 
 class SmokeError(RuntimeError):
@@ -100,7 +102,7 @@ def _environment(home: Path) -> dict[str, str]:
     return environment
 
 
-def parse_turn(raw: str, required: Mapping[str, type]) -> TurnResult:
+def parse_turn(raw: str, required: Mapping[str, ExpectedType]) -> TurnResult:
     try:
         envelope = json.loads(raw)
         content = json.loads(envelope["text"])
@@ -126,7 +128,7 @@ def run_turn(
     profile: str,
     model: str,
     prompt: str,
-    required: Mapping[str, type],
+    required: Mapping[str, ExpectedType],
     timeout_seconds: float,
 ) -> TurnResult:
     command = [

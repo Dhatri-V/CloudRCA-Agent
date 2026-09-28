@@ -1,8 +1,7 @@
-from pathlib import Path
 import shutil
+from pathlib import Path
 
 from scripts.validate_aiops2025_subset import topology_evidence
-
 
 FIXTURES = Path(__file__).parent / "fixtures" / "aiops2025"
 

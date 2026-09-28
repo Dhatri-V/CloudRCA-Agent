@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run the optional live JCode/Qwen/GLM compatibility smoke."""
 
-from argparse import ArgumentParser
 import json
+from argparse import ArgumentParser
 from pathlib import Path
 
 from cloudrca_compatibility.jcode_smoke import ProviderSpec, SmokeError, run_smoke
