@@ -1,9 +1,9 @@
-from pathlib import Path
 import json
+from pathlib import Path
+
 import pytest
 
 from cloudrca_dataset_validation.profiler import profile_directory, profile_file
-
 
 FIXTURES = Path(__file__).parent / "fixtures" / "aiops2025"
 

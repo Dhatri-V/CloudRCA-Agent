@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-import json
 
-from charset_normalizer import from_bytes
 import polars as pl
+from charset_normalizer import from_bytes
 
 SUPPORTED_SUFFIXES = {".parquet", ".json", ".jsonl"}
 IDENTIFIER_COLUMNS = (

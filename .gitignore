@@ -1,8 +1,25 @@
 .venv/
+.env
+.env.*
+!.env.example
 __pycache__/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .ipynb_checkpoints/
 *.py[cod]
+*.egg-info/
+
+# Frontend dependencies and generated output.
+node_modules/
+frontend/coverage/
+frontend/dist/
+
+# Local secrets and credentials.
+*.pem
+*.key
+credentials.json
+secrets.json
 
 # AIOps2025 raw/extracted data is large and must never be committed.
 data/raw/**
