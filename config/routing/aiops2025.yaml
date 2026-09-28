@@ -27,7 +27,6 @@ layers:
   host_hypervisor:
     aliases:
       - hypervisor
-      - host
       - libvirt
       - qemu
       - esxi

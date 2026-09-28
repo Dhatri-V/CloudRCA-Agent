@@ -111,6 +111,7 @@ def test_issue_5_normalized_redis_event_routes_without_conversion(config: Routin
     routed = route_and_resolve(batch.events[0], config)
     assert routed.event is batch.events[0]
     assert routed.routing.layer is RoutingLayer.DATABASE
+    assert routed.topology.relationships[0].provenance.kind is ProvenanceKind.OBSERVED
 
 
 def test_real_redis_pod_to_worker_topology_is_observed(config: RoutingConfig) -> None:
@@ -119,6 +120,13 @@ def test_real_redis_pod_to_worker_topology_is_observed(config: RoutingConfig) ->
         database_id="redis-cart-0",
         pod_id="redis-cart-0",
         vm_id="vm-worker-08",
+        metadata={
+            "component_pod_association": {
+                "component": "redis",
+                "pod_id": "redis-cart-0",
+                "basis": "same_source_record",
+            }
+        },
     )
     routed = route_and_resolve(candidate, config)
     relationship = routed.topology.relationships[0]
@@ -154,7 +162,28 @@ def test_non_aiops_redis_metadata_does_not_claim_observed_topology(config: Routi
         database_id="redis-cart-0",
         pod_id="redis-cart-0",
         vm_id="vm-worker-08",
+        metadata={
+            "component_pod_association": {
+                "component": "redis",
+                "pod_id": "redis-cart-0",
+                "basis": "same_source_record",
+            }
+        },
         provenance=Provenance(kind="observed", source="another-dataset"),
+    )
+    routed = route_and_resolve(candidate, config)
+    assert routed.topology.relationships == ()
+    assert routed.topology.unavailable[0].target_kind.value == "vm"
+
+
+def test_independent_redis_and_pod_fields_do_not_create_observed_topology(
+    config: RoutingConfig,
+) -> None:
+    candidate = event(
+        service="redis",
+        database_id="redis",
+        pod_id="unrelated-pod-0",
+        vm_id="vm-worker-08",
     )
     routed = route_and_resolve(candidate, config)
     assert routed.topology.relationships == ()
@@ -179,6 +208,22 @@ def test_explicit_host_augmentation_preserves_provenance(
     assert relationship.target.component_id == "demo-host-01"
     assert relationship.provenance.kind is kind
     assert relationship.provenance.details["scenario_id"] == "demo-scenario"
+
+
+def test_long_augmentation_id_produces_bounded_stable_evidence_id(config: RoutingConfig) -> None:
+    candidate = event(source="aiops2025.metric.node", vm_id="vm-worker-03")
+    augmentation = TopologyAugmentation(
+        augmentation_id="a" * 256,
+        vm_id="vm-worker-03",
+        host_id="demo-host-01",
+        provenance_kind="synthetic",
+        scenario_id="demo-scenario",
+        generator_version="1.0.0",
+    )
+    routed = route_and_resolve(candidate, config, augmentations=(augmentation,))
+    evidence_id = routed.topology.relationships[0].evidence[0].evidence_id
+    assert len(evidence_id) <= 256
+    assert evidence_id == routed.topology.relationships[0].evidence[0].evidence_id
 
 
 def test_augmentation_cannot_claim_observed_provenance() -> None:

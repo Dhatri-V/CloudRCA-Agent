@@ -292,10 +292,15 @@ def _component(component_id: str, kind: ComponentKind, layer: Layer) -> Componen
     return ComponentRef(component_id=component_id, kind=kind, layer=layer)
 
 
-def _is_redis(event: NormalizedEvent) -> bool:
-    return any(
-        value is not None and _alias_matches(value, "redis")
-        for value in (event.service, event.database_id, event.pod_id)
+def _has_validated_redis_pod_association(event: NormalizedEvent) -> bool:
+    association = event.metadata.get("component_pod_association")
+    component = association.get("component") if isinstance(association, dict) else None
+    return (
+        isinstance(association, dict)
+        and association.get("basis") == "same_source_record"
+        and association.get("pod_id") == event.pod_id
+        and isinstance(component, str)
+        and _alias_matches(component, "redis")
     )
 
 
@@ -346,7 +351,7 @@ def _synthetic_host_placement(event: NormalizedEvent, augmentation: TopologyAugm
         provenance=provenance,
         evidence=(
             EvidenceReference(
-                evidence_id=f"evidence-{augmentation.augmentation_id}",
+                evidence_id=_stable_id("evidence", {"augmentation_id": augmentation.augmentation_id}),
                 kind=EvidenceKind.TOPOLOGY,
                 reference_id=augmentation.augmentation_id,
                 description=description,
@@ -372,7 +377,13 @@ def resolve_topology(
             event.provenance.kind is ProvenanceKind.OBSERVED
             and event.provenance.source.casefold() == "aiops2025"
         )
-        if database_id and event.pod_id and vm_id and _is_redis(event) and observed_aiops2025:
+        if (
+            database_id
+            and event.pod_id
+            and vm_id
+            and _has_validated_redis_pod_association(event)
+            and observed_aiops2025
+        ):
             relationships.append(_observed_redis_placement(event))
         elif database_id:
             unavailable.append(
