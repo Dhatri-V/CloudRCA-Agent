@@ -1,0 +1,36 @@
+version: 1
+
+confidence:
+  exact_identifier: 1.0
+  exact_metadata: 0.95
+  fallback_pattern: 0.55
+
+layers:
+  database:
+    aliases:
+      - redis
+      - redis-cart
+      - tidb
+      - tikv
+      - pd
+      - tiflash
+    fallback_patterns:
+      - "\\b(database connection|slow query|sql timeout)\\b"
+  vm_guest_os:
+    aliases:
+      - node
+      - kubelet
+      - vm
+      - guest-os
+    fallback_patterns:
+      - "\\b(i/o wait|cpu pressure|memory pressure)\\b"
+  host_hypervisor:
+    aliases:
+      - hypervisor
+      - libvirt
+      - qemu
+      - esxi
+      - kvm
+      - physical-host
+    fallback_patterns:
+      - "\\b(hypervisor failure|virtualization host)\\b"

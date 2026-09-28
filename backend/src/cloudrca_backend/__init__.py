@@ -41,6 +41,19 @@ from .normalization import (
     parse_utc_timestamp,
     read_aiops2025_records,
 )
+from .routing import (
+    RoutedEvent,
+    RoutingConfig,
+    RoutingDecision,
+    RoutingLayer,
+    TopologyAugmentation,
+    TopologyResolution,
+    UnavailableTopology,
+    load_routing_config,
+    resolve_topology,
+    route_and_resolve,
+    route_event,
+)
 from .settings import Profile, Settings, SettingsError, load_settings
 
 __all__ = [
@@ -72,6 +85,10 @@ __all__ = [
     "RejectionReason",
     "RelationshipType",
     "RootCauseHypothesis",
+    "RoutedEvent",
+    "RoutingConfig",
+    "RoutingDecision",
+    "RoutingLayer",
     "Settings",
     "SettingsError",
     "SourceRecord",
@@ -79,10 +96,17 @@ __all__ = [
     "TimelineEntry",
     "TimeWindow",
     "TopologyRelationship",
+    "TopologyAugmentation",
+    "TopologyResolution",
+    "UnavailableTopology",
+    "load_routing_config",
     "load_settings",
     "normalize_batch",
     "normalize_file",
     "normalize_record",
     "parse_utc_timestamp",
     "read_aiops2025_records",
+    "resolve_topology",
+    "route_and_resolve",
+    "route_event",
 ]

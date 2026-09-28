@@ -378,6 +378,13 @@ def normalize_record(record: SourceRecord, *, assumed_timezone: str | None = Non
         )
         if (value := data.get(key)) is not None and _clean_text(value) is not None
     }
+    component_pod_association: dict[str, JsonValue] | None = None
+    if service is not None and pod_id is not None and _component_name(pod_id) == service:
+        component_pod_association = {
+            "component": service,
+            "pod_id": pod_id,
+            "basis": "same_source_record",
+        }
     vm_id = _clean_text(data.get("k8_node_name") or data.get("kubernetes_node"))
     database_id: str | None = None
     if layer is Layer.VM:
@@ -413,6 +420,7 @@ def normalize_record(record: SourceRecord, *, assumed_timezone: str | None = Non
                 "original_severity": original_severity,
                 "fingerprint": fingerprint,
                 "source_attributes": source_attributes,
+                "component_pod_association": component_pod_association,
             },
             provenance=Provenance(
                 kind=ProvenanceKind.OBSERVED,

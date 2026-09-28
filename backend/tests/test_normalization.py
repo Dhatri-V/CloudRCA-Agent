@@ -122,6 +122,11 @@ def test_normalization_cleans_text_and_preserves_optional_identifiers() -> None:
     assert event.vm_id == "vm-worker-08"
     assert event.database_id == "redis-cart-0"
     assert event.severity.value == "unknown"
+    assert event.metadata["component_pod_association"] == {
+        "component": "redis",
+        "pod_id": "redis-cart-0",
+        "basis": "same_source_record",
+    }
 
 
 def test_null_sentinels_are_not_emitted_as_identifiers() -> None:
