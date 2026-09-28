@@ -1,0 +1,39 @@
+cases:
+  - name: database identifier
+    event:
+      source: aiops2025.log
+      service: redis
+      database_id: redis-cart-0
+      pod_id: redis-cart-0
+      vm_id: vm-worker-08
+      message: Redis persistence warning
+    expected_layer: database
+    expected_confidence: 1.0
+  - name: VM identifier
+    event:
+      source: aiops2025.metric.node
+      vm_id: vm-worker-03
+      message: node_cpu_usage_rate=0.8
+    expected_layer: vm_guest_os
+    expected_confidence: 1.0
+  - name: hypervisor metadata
+    event:
+      source: host-telemetry
+      service: libvirt
+      host_id: null
+      message: domain lifecycle event
+    expected_layer: host_hypervisor
+    expected_confidence: 0.95
+  - name: unknown
+    event:
+      source: custom-telemetry
+      message: component emitted an event
+    expected_layer: unknown
+    expected_confidence: 0.0
+  - name: ambiguous metadata
+    event:
+      source: libvirt
+      service: redis
+      message: component event
+    expected_layer: ambiguous
+    expected_confidence: 0.95

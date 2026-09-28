@@ -237,3 +237,5 @@ See [`docs/development.md`](docs/development.md) for the short clean-checkout se
 The shared event, topology, finding, incident, and RCA data formats are documented in [`docs/domain-contracts.md`](docs/domain-contracts.md).
 
 The supported AIOps2025 parsing, UTC conversion, deduplication, and quarantine behavior is documented in [`docs/log-normalization.md`](docs/log-normalization.md).
+
+Deterministic layer routing and evidence-constrained topology behavior are documented in [`docs/layer-routing-topology.md`](docs/layer-routing-topology.md).
