@@ -239,3 +239,5 @@ The shared event, topology, finding, incident, and RCA data formats are document
 The supported AIOps2025 parsing, UTC conversion, deduplication, and quarantine behavior is documented in [`docs/log-normalization.md`](docs/log-normalization.md).
 
 Deterministic layer routing and evidence-constrained topology behavior are documented in [`docs/layer-routing-topology.md`](docs/layer-routing-topology.md).
+
+The isolated JCode/Qwen execution contract shared by future specialist agents is documented in [`docs/specialist-runtime.md`](docs/specialist-runtime.md).
