@@ -6,11 +6,19 @@ CloudRCA uses Python 3.12 with `uv` and Node.js 22 LTS with npm.
 
 ```bash
 uv sync --extra dev
-cd frontend
-npm ci
+npm --prefix frontend ci
 ```
 
-Copy `.env.example` to `.env` when running application code. The supported profiles are `development`, `test`, and `demo`. Do not commit `.env`.
+Copy and load the example settings in your shell before running application code:
+
+```bash
+cp .env.example .env
+set -a
+. ./.env
+set +a
+```
+
+The supported profiles are `development`, `test`, and `demo`. Do not commit `.env`.
 
 ## Backend checks
 
