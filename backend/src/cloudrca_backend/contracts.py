@@ -41,6 +41,7 @@ class Layer(StrEnum):
 
 
 class Severity(StrEnum):
+    UNKNOWN = "unknown"
     DEBUG = "debug"
     INFO = "info"
     WARNING = "warning"
