@@ -233,3 +233,5 @@ Issue #2 pins JCode `v0.88.0` and records the Qwen/GLM-5.3 compatibility decisio
 ## Development
 
 See [`docs/development.md`](docs/development.md) for the short clean-checkout setup and quality commands.
+
+The shared event, topology, finding, incident, and RCA data formats are documented in [`docs/domain-contracts.md`](docs/domain-contracts.md).
