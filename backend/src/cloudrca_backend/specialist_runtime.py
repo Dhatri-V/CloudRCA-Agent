@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Protocol
+from typing import Annotated, Any, Generic, Protocol, TypeVar
 from uuid import uuid4
 
 import structlog
@@ -108,6 +108,17 @@ class SpecialistRunResult(BaseModel):
     metadata: SpecialistExecutionMetadata
 
 
+StructuredOutput = TypeVar("StructuredOutput", bound=BaseModel)
+
+
+class SpecialistStructuredRunResult(BaseModel, Generic[StructuredOutput]):
+    """A validated specialist-owned result with shared execution metadata."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    output: StructuredOutput
+    metadata: SpecialistExecutionMetadata
+
+
 class SpecialistRuntimeError(RuntimeError):
     """Typed specialist failure with complete, safe execution metadata."""
 
@@ -199,7 +210,8 @@ def load_specialist_runtime_config(
     return config
 
 
-def _event_context(routed: RoutedEvent) -> dict[str, Any]:
+def specialist_event_context(routed: RoutedEvent) -> dict[str, Any]:
+    """Return the safe, canonical event context used in specialist prompts."""
     event = routed.event
     return {
         "event_id": event.event_id,
@@ -235,7 +247,7 @@ def build_specialist_prompt(request: SpecialistRequest, prompt_version: str) -> 
     """Build a stable prompt without including raw source records or secrets."""
     payload = {
         "specialist_layer": request.layer.value,
-        "events": [_event_context(item) for item in request.events],
+        "events": [specialist_event_context(item) for item in request.events],
     }
     schema = Finding.model_json_schema(mode="validation")
     sections = (
@@ -253,11 +265,12 @@ def _repair_prompt(
     invalid_response: str,
     error: str,
     prompt_version: str,
+    output_name: str = "structured output",
 ) -> str:
     return "\n".join(
         (
             f"CLOUDRCA_SPECIALIST_PROMPT_VERSION={prompt_version}",
-            "Repair the previous response. Return only a corrected JSON object.",
+            f"Repair the previous response. Return only a corrected {output_name} JSON object.",
             f"VALIDATION_ERROR={error}",
             f"INVALID_RESPONSE={invalid_response}",
             original_prompt,
@@ -488,6 +501,23 @@ class SpecialistRuntime:
 
     def run(self, request: SpecialistRequest) -> SpecialistRunResult:
         """Run one specialist request, bounded repair, and Finding validation."""
+        result = self.run_structured(
+            request,
+            prompt_builder=build_specialist_prompt,
+            response_validator=_validate_finding,
+            output_name="Finding",
+        )
+        return SpecialistRunResult(finding=result.output, metadata=result.metadata)
+
+    def run_structured(
+        self,
+        request: SpecialistRequest,
+        *,
+        prompt_builder: Callable[[SpecialistRequest, str], str],
+        response_validator: Callable[[str, SpecialistRequest], StructuredOutput],
+        output_name: str = "structured output",
+    ) -> SpecialistStructuredRunResult[StructuredOutput]:
+        """Run a specialist-owned schema through the shared bounded runtime."""
         correlation_id = request.correlation_id or self._correlation_id_factory()
         start = self._clock()
         usage = TokenUsage()
@@ -516,7 +546,7 @@ class SpecialistRuntime:
             raise self._fail(
                 request, correlation_id, start, SpecialistFailureCode.CONFIGURATION, str(exc)
             ) from exc
-        prompt = build_specialist_prompt(request, self._config.prompt_version)
+        prompt = prompt_builder(request, self._config.prompt_version)
         if len(prompt) > self._config.max_prompt_characters:
             raise self._fail(
                 request,
@@ -533,7 +563,7 @@ class SpecialistRuntime:
                     session_id = response.session_id
                     usage = usage.plus(response.usage)
                     try:
-                        finding = _validate_finding(response.text, request)
+                        output = response_validator(response.text, request)
                         break
                     except (ValueError, json.JSONDecodeError) as exc:
                         if repair_count >= self._config.max_repair_attempts:
@@ -542,7 +572,7 @@ class SpecialistRuntime:
                                 correlation_id,
                                 start,
                                 SpecialistFailureCode.INVALID_OUTPUT,
-                                f"structured Finding remained invalid after {repair_count} repairs: {exc}",
+                                f"structured {output_name} remained invalid after {repair_count} repairs: {exc}",
                                 repair_count=repair_count,
                                 usage=usage,
                                 session_id=session_id,
@@ -553,6 +583,7 @@ class SpecialistRuntime:
                             response.text,
                             str(exc),
                             self._config.prompt_version,
+                            output_name,
                         )
                         if len(current_prompt) > self._config.max_prompt_characters:
                             raise self._fail(
@@ -610,4 +641,4 @@ class SpecialistRuntime:
             session_id=session_id,
         )
         self._logger.info("specialist_run_completed", **metadata.model_dump(mode="json"))
-        return SpecialistRunResult(finding=finding, metadata=metadata)
+        return SpecialistStructuredRunResult(output=output, metadata=metadata)
