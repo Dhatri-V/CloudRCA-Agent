@@ -86,6 +86,19 @@ from .specialist_runtime import (
     load_specialist_runtime_config,
     specialist_event_context,
 )
+from .vm_agent import (
+    EvidenceState,
+    VMAgent,
+    VMAgentInputError,
+    VMAnalysis,
+    VMErrorType,
+    VMFinding,
+    VMHypothesis,
+    VMObservation,
+    VMSymptom,
+    build_vm_prompt,
+    validate_vm_analysis,
+)
 
 __all__ = [
     "CONTRACT_VERSION",
@@ -106,6 +119,7 @@ __all__ = [
     "DuplicateRecord",
     "EvidenceKind",
     "EvidenceReference",
+    "EvidenceState",
     "Finding",
     "Incident",
     "IncidentStatus",
@@ -165,6 +179,16 @@ __all__ = [
     "route_event",
     "build_specialist_prompt",
     "build_database_prompt",
+    "build_vm_prompt",
     "specialist_event_context",
     "validate_database_analysis",
+    "VMAnalysis",
+    "VMAgent",
+    "VMAgentInputError",
+    "VMErrorType",
+    "VMFinding",
+    "VMHypothesis",
+    "VMObservation",
+    "VMSymptom",
+    "validate_vm_analysis",
 ]
