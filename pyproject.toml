@@ -10,6 +10,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
   "charset-normalizer>=3.4,<4",
   "pydantic>=2.12,<3",
+  "networkx>=3.4,<4",
   "polars>=1.30,<2",
   "python-dateutil>=2.9,<3",
   "pyyaml>=6.0,<7",
@@ -24,6 +25,7 @@ dev = [
   "pytest>=8,<10",
   "ruff>=0.13,<1",
   "types-python-dateutil>=2.9,<3",
+  "types-networkx>=3.4,<4",
   "types-pyyaml>=6.0,<7",
 ]
 

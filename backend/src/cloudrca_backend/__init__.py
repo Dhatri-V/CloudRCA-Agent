@@ -27,6 +27,15 @@ from .contracts import (
     TimeWindow,
     TopologyRelationship,
 )
+from .correlation import (
+    CorrelationConfig,
+    CorrelationEdge,
+    CorrelationEdgeType,
+    CorrelationGraph,
+    CorrelationInputError,
+    CorrelationNode,
+    CrossLayerCorrelator,
+)
 from .database_agent import (
     DatabaseAgent,
     DatabaseAgentInputError,
@@ -141,6 +150,12 @@ __all__ = [
     "AuditRecord",
     "AttachedSpecialistFinding",
     "CausalEdge",
+    "CorrelationConfig",
+    "CorrelationEdge",
+    "CorrelationEdgeType",
+    "CorrelationGraph",
+    "CorrelationInputError",
+    "CorrelationNode",
     "CandidateIncident",
     "CandidateIncidentSet",
     "Confidence",
@@ -148,6 +163,7 @@ __all__ = [
     "ComponentKind",
     "ComponentRef",
     "Correlation",
+    "CrossLayerCorrelator",
     "DatabaseAgent",
     "DatabaseAgentInputError",
     "DatabaseAnalysis",
