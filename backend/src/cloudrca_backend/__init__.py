@@ -27,6 +27,18 @@ from .contracts import (
     TimeWindow,
     TopologyRelationship,
 )
+from .database_agent import (
+    DatabaseAgent,
+    DatabaseAgentInputError,
+    DatabaseAnalysis,
+    DatabaseErrorType,
+    DatabaseFinding,
+    DatabaseHypothesis,
+    DatabaseObservation,
+    HypothesisType,
+    build_database_prompt,
+    validate_database_analysis,
+)
 from .normalization import (
     BatchStatistics,
     DuplicateRecord,
@@ -68,9 +80,11 @@ from .specialist_runtime import (
     SpecialistRuntime,
     SpecialistRuntimeConfig,
     SpecialistRuntimeError,
+    SpecialistStructuredRunResult,
     TokenUsage,
     build_specialist_prompt,
     load_specialist_runtime_config,
+    specialist_event_context,
 )
 
 __all__ = [
@@ -82,12 +96,20 @@ __all__ = [
     "ComponentKind",
     "ComponentRef",
     "Correlation",
+    "DatabaseAgent",
+    "DatabaseAgentInputError",
+    "DatabaseAnalysis",
+    "DatabaseErrorType",
+    "DatabaseFinding",
+    "DatabaseHypothesis",
+    "DatabaseObservation",
     "DuplicateRecord",
     "EvidenceKind",
     "EvidenceReference",
     "Finding",
     "Incident",
     "IncidentStatus",
+    "HypothesisType",
     "JCodeCliTransport",
     "JCodeConfigurationError",
     "JCodeProviderError",
@@ -121,6 +143,7 @@ __all__ = [
     "SpecialistRuntime",
     "SpecialistRuntimeConfig",
     "SpecialistRuntimeError",
+    "SpecialistStructuredRunResult",
     "Severity",
     "TimelineEntry",
     "TimeWindow",
@@ -141,4 +164,7 @@ __all__ = [
     "route_and_resolve",
     "route_event",
     "build_specialist_prompt",
+    "build_database_prompt",
+    "specialist_event_context",
+    "validate_database_analysis",
 ]
