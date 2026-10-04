@@ -55,3 +55,11 @@ disallow_untyped_defs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 exclude = ["notebooks"]
+
+[dependency-groups]
+dev = [
+    "alembic>=1.14,<2",
+    "psycopg[binary]>=3.2,<4",
+    "sentence-transformers>=3.0,<4",
+    "sqlalchemy>=2.0,<3",
+]
