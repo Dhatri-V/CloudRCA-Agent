@@ -10,6 +10,7 @@ from cloudrca_backend.dashboard import (
     DashboardSettings,
     display_label,
     incident_summary,
+    layer_state,
 )
 
 
@@ -38,7 +39,7 @@ def render() -> None:
     elif page == "Incidents":
         render_incidents(settings)
     else:
-        st.info("No evidence is selected. Choose an incident to inspect its supporting events.")
+        render_detail(settings)
 
 
 def client(settings: DashboardSettings) -> BackendClient:
@@ -131,7 +132,7 @@ def render_incidents(settings: DashboardSettings) -> None:
             st.write({key: payload.get(key) for key in ("severity", "timestamp", "layer", "status")})
             if st.button("Open incident", key=item.artifact_id):
                 st.session_state["selected_incident_id"] = item.artifact_id
-                st.success("Incident selected. Its detail and evidence view arrives in the next dashboard step.")
+                st.success("Incident selected. Open Evidence to inspect findings and cited events.")
     total = page.total
     previous, next_page = st.columns(2)
     if previous.button("Previous", disabled=offset == 0, use_container_width=True):
@@ -140,6 +141,43 @@ def render_incidents(settings: DashboardSettings) -> None:
     if next_page.button("Next", disabled=offset + 20 >= total, use_container_width=True):
         st.session_state["incident_offset"] = offset + 20
         st.rerun()
+
+
+def render_detail(settings: DashboardSettings) -> None:
+    incident_id = st.session_state.get("selected_incident_id")
+    if not isinstance(incident_id, str):
+        st.info("No incident is selected. Choose Open incident from the incident list.")
+        return
+    try:
+        incident = client(settings).incident(incident_id)
+        findings = client(settings).list_findings()
+        evidence = client(settings).list_evidence()
+    except BackendClientError as error:
+        st.error(str(error))
+        return
+    payload = incident.payload
+    st.subheader(incident_summary(payload))
+    st.caption(f"Incident ID: {incident.artifact_id}")
+    severity = str(payload.get("severity", "unknown"))
+    st.write(f"Severity: {display_label(severity)}")
+    cards = st.columns(3)
+    for card, name, identifier in zip(cards, ("Database", "VM", "Hypervisor"), ("database", "vm_guest_os", "host_hypervisor"), strict=True):
+        card.metric(name, display_label(layer_state(payload, identifier)))
+    uncertainty = payload.get("uncertainty")
+    if isinstance(uncertainty, str) and uncertainty:
+        st.warning(uncertainty)
+    st.subheader("Findings")
+    if not findings.items:
+        st.info("No persisted findings are available for this incident.")
+    for finding in findings.items:
+        with st.expander(incident_summary(finding.payload)):
+            st.json(finding.payload, expanded=False)
+    st.subheader("Evidence and provenance")
+    if not evidence.items:
+        st.info("No persisted evidence is available for this incident.")
+    for event in evidence.items:
+        with st.expander(str(event.payload.get("event_id", event.artifact_id))):
+            st.json(event.payload, expanded=False)
 
 
 render()

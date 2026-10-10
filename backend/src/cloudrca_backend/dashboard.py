@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from .api import Dataset, Job, Page
+from .api import Artifact, Dataset, Job, Page
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -94,6 +94,15 @@ class BackendClient:
         query.update({"offset": str(offset), "limit": str(limit)})
         return self._model(Page, Request(self._url(f"/api/v1/incidents?{urlencode(query)}")))
 
+    def incident(self, incident_id: str) -> Artifact:
+        return self._model(Artifact, Request(self._url(f"/api/v1/incidents/{incident_id}")))
+
+    def list_findings(self) -> Page:
+        return self._model(Page, Request(self._url("/api/v1/findings")))
+
+    def list_evidence(self) -> Page:
+        return self._model(Page, Request(self._url("/api/v1/evidence")))
+
     def _model(self, model: type[ModelT], request: Request) -> ModelT:
         try:
             return model.model_validate(self._request_json(request))
@@ -142,6 +151,16 @@ def incident_summary(incident: Mapping[str, object]) -> str:
         if isinstance(value, str) and value:
             return value
     return "Incident details are not yet available."
+
+
+def layer_state(payload: Mapping[str, object], layer: str) -> str:
+    """Show only layer availability directly represented by the persisted incident."""
+    affected = payload.get("affected_layers", payload.get("layers", payload.get("layer")))
+    if isinstance(affected, str):
+        return "available" if affected == layer else "not reported"
+    if isinstance(affected, list | tuple | set | frozenset):
+        return "available" if layer in affected else "not reported"
+    return "not reported"
 
 
 def severity_tone(severity: str) -> str:

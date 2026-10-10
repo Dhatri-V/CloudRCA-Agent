@@ -20,6 +20,7 @@ from cloudrca_backend.dashboard import (
     display_label,
     evidence_label,
     format_utc,
+    layer_state,
     severity_tone,
 )
 from streamlit.testing.v1 import AppTest
@@ -146,6 +147,8 @@ def test_dashboard_presentation_helpers_are_consistent() -> None:
     assert display_label("in_progress") == "In Progress"
     assert evidence_label(("event-1", "event-2")) == "Evidence: event-1, event-2"
     assert evidence_label(()) == "Evidence: none"
+    assert layer_state({"affected_layers": ["database", "vm_guest_os"]}, "database") == "available"
+    assert layer_state({}, "host_hypervisor") == "not reported"
     assert severity_tone("critical") == "error"
 
 
