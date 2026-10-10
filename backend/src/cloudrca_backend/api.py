@@ -83,6 +83,13 @@ class Dataset(BaseModel):
     validation: dict[str, object]
 
 
+class Page(BaseModel):
+    items: list[Artifact]
+    total: int
+    offset: int
+    limit: int
+
+
 @dataclass(frozen=True)
 class AnalysisResult:
     status: JobStatus = JobStatus.COMPLETED
@@ -178,6 +185,19 @@ class JobRepository:
             Artifact(artifact_id=str(row[0]), job_id=str(row[1]), kind=ArtifactKind(str(row[2])), payload=json.loads(str(row[3])))
             for row in rows
         )
+
+    def query_artifacts(self, kind: ArtifactKind, offset: int, limit: int) -> tuple[tuple[Artifact, ...], int]:
+        with self._connect() as connection:
+            total = int(connection.execute("SELECT COUNT(*) FROM analysis_artifacts WHERE kind = ?", (kind.value,)).fetchone()[0])
+            rows = connection.execute(
+                "SELECT * FROM analysis_artifacts WHERE kind = ? ORDER BY artifact_id LIMIT ? OFFSET ?", (kind.value, limit, offset)
+            ).fetchall()
+        return tuple(Artifact(artifact_id=str(row[0]), job_id=str(row[1]), kind=ArtifactKind(str(row[2])), payload=json.loads(str(row[3]))) for row in rows), total
+
+    def artifact(self, kind: ArtifactKind, artifact_id: str) -> Artifact | None:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM analysis_artifacts WHERE kind = ? AND artifact_id = ?", (kind.value, artifact_id)).fetchone()
+        return Artifact(artifact_id=str(row[0]), job_id=str(row[1]), kind=ArtifactKind(str(row[2])), payload=json.loads(str(row[3]))) if row else None
 
     def save_upload(self, job_id: str, filename: str, content_type: str, content: bytes) -> Upload:
         if self.get(job_id) is None:
@@ -404,6 +424,56 @@ def create_app(
         if repository.get(job_id) is None:
             raise HTTPException(status_code=404, detail="analysis job not found")
         return repository.artifacts(job_id)
+
+    def page(kind: ArtifactKind, offset: int, limit: int, filters: dict[str, str] | None = None) -> Page:
+        items, total = repository.query_artifacts(kind, offset, limit)
+        if filters:
+            items = tuple(item for item in items if all(str(item.payload.get(key, "")) == value for key, value in filters.items()))
+            total = len(items)
+        return Page(items=list(items), total=total, offset=offset, limit=limit)
+
+    @app.get("/api/v1/incidents", response_model=Page)
+    def list_incidents(
+        severity: str | None = None, status: str | None = None, layer: str | None = None,
+        start_utc: str | None = None, end_utc: str | None = None, offset: int = 0, limit: int = 50
+    ) -> Page:
+        filters = {key: value for key, value in {"severity": severity, "status": status, "layer": layer}.items() if value}
+        response = page(ArtifactKind.INCIDENT, 0, 100, filters)
+        if start_utc or end_utc:
+            response.items = [item for item in response.items if (not start_utc or str(item.payload.get("timestamp", "")) >= start_utc) and (not end_utc or str(item.payload.get("timestamp", "")) <= end_utc)]
+            response.total = len(response.items)
+        response.items = response.items[offset : offset + min(limit, 100)]
+        response.offset, response.limit = offset, min(limit, 100)
+        return response
+
+    @app.get("/api/v1/incidents/{incident_id}", response_model=Artifact)
+    def incident_detail(incident_id: str) -> Artifact:
+        incident = repository.artifact(ArtifactKind.INCIDENT, incident_id)
+        if incident is None:
+            raise HTTPException(status_code=404, detail="incident not found")
+        return incident
+
+    @app.get("/api/v1/findings", response_model=Page)
+    def list_findings(offset: int = 0, limit: int = 50) -> Page:
+        return page(ArtifactKind.FINDING, offset, min(limit, 100))
+
+    @app.get("/api/v1/evidence", response_model=Page)
+    def list_evidence(offset: int = 0, limit: int = 50) -> Page:
+        return page(ArtifactKind.EVENT, offset, min(limit, 100))
+
+    @app.get("/api/v1/graphs/{graph_id}", response_model=Artifact)
+    def graph_detail(graph_id: str) -> Artifact:
+        graph = repository.artifact(ArtifactKind.GRAPH, graph_id)
+        if graph is None:
+            raise HTTPException(status_code=404, detail="graph not found")
+        return graph
+
+    @app.get("/api/v1/reports/{report_id}", response_model=Artifact)
+    def report_detail(report_id: str) -> Artifact:
+        report = repository.artifact(ArtifactKind.REPORT, report_id)
+        if report is None:
+            raise HTTPException(status_code=404, detail="report not found")
+        return report
 
     @app.post("/api/v1/analysis-jobs/{job_id}/uploads", status_code=201, response_model=Upload)
     def save_upload(

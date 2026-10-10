@@ -62,3 +62,18 @@ def test_dataset_upload_validation_and_idempotent_analysis(tmp_path: Path) -> No
     first = client.post(f"/api/v1/datasets/{dataset['dataset_id']}/analysis", headers=analysis_headers).json()
     second = client.post(f"/api/v1/datasets/{dataset['dataset_id']}/analysis", headers=analysis_headers).json()
     assert first["job_id"] == second["job_id"]
+
+
+def test_dashboard_queries_filter_paginate_and_publish_openapi(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path / "api.sqlite3"))
+    job_id = client.post("/api/v1/analysis-jobs", json={}).json()["job_id"]
+    first = client.post(
+        f"/api/v1/analysis-jobs/{job_id}/artifacts?kind=incident",
+        json={"severity": "high", "status": "open", "layer": "vm", "timestamp": "2026-01-01T00:00:00Z"},
+    ).json()
+    client.post(f"/api/v1/analysis-jobs/{job_id}/artifacts?kind=incident", json={"severity": "low"})
+    page = client.get("/api/v1/incidents?severity=high&layer=vm&limit=1").json()
+    assert page["total"] == 1 and page["items"][0]["artifact_id"] == first["artifact_id"]
+    assert client.get("/api/v1/incidents?severity=critical").json()["items"] == []
+    assert client.get("/api/v1/graphs/missing").status_code == 404
+    assert "/api/v1/incidents" in client.get("/openapi.json").json()["paths"]
