@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import structlog
 import uvicorn
-from fastapi import BackgroundTasks, Body, FastAPI, HTTPException, Response
+from fastapi import BackgroundTasks, Body, FastAPI, File, Header, HTTPException, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 logger = structlog.get_logger(__name__)
@@ -76,6 +76,13 @@ class Upload(BaseModel):
     sha256: str
 
 
+class Dataset(BaseModel):
+    dataset_id: str
+    filename: str
+    sha256: str
+    validation: dict[str, object]
+
+
 @dataclass(frozen=True)
 class AnalysisResult:
     status: JobStatus = JobStatus.COMPLETED
@@ -112,6 +119,13 @@ class JobRepository:
                 "CREATE TABLE IF NOT EXISTS analysis_uploads (upload_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, "
                 "filename TEXT NOT NULL, content_type TEXT NOT NULL, content BLOB NOT NULL, sha256 TEXT NOT NULL, "
                 "FOREIGN KEY(job_id) REFERENCES analysis_jobs(job_id))"
+            )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS datasets (dataset_id TEXT PRIMARY KEY, idempotency_key TEXT UNIQUE, "
+                "filename TEXT NOT NULL, content BLOB NOT NULL, sha256 TEXT NOT NULL, validation TEXT NOT NULL)"
+            )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS analysis_requests (idempotency_key TEXT PRIMARY KEY, dataset_id TEXT NOT NULL, job_id TEXT NOT NULL)"
             )
             connection.execute("INSERT OR REPLACE INTO schema_version VALUES (?)", (SCHEMA_VERSION,))
 
@@ -204,6 +218,46 @@ class JobRepository:
         except sqlite3.Error:
             return False
 
+    def create_dataset(self, filename: str, content: bytes, idempotency_key: str | None) -> Dataset:
+        if idempotency_key:
+            with self._connect() as connection:
+                row = connection.execute(
+                    "SELECT dataset_id, filename, sha256, validation FROM datasets WHERE idempotency_key = ?", (idempotency_key,)
+                ).fetchone()
+            if row:
+                return Dataset(dataset_id=str(row[0]), filename=str(row[1]), sha256=str(row[2]), validation=json.loads(str(row[3])))
+        validation = validate_dataset(filename, content)
+        if not validation["valid"]:
+            raise ValueError(str(validation["error"]))
+        dataset = Dataset(dataset_id=str(uuid4()), filename=filename, sha256=hashlib.sha256(content).hexdigest(), validation=validation)
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO datasets VALUES (?, ?, ?, ?, ?, ?)",
+                (dataset.dataset_id, idempotency_key, filename, content, dataset.sha256, json.dumps(validation)),
+            )
+        return dataset
+
+    def dataset(self, dataset_id: str) -> Dataset | None:
+        with self._connect() as connection:
+            row = connection.execute("SELECT dataset_id, filename, sha256, validation FROM datasets WHERE dataset_id = ?", (dataset_id,)).fetchone()
+        return Dataset(dataset_id=str(row[0]), filename=str(row[1]), sha256=str(row[2]), validation=json.loads(str(row[3]))) if row else None
+
+    def analysis_request(self, dataset_id: str, idempotency_key: str | None) -> Job:
+        if idempotency_key:
+            with self._connect() as connection:
+                row = connection.execute("SELECT dataset_id, job_id FROM analysis_requests WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
+            if row:
+                if str(row[0]) != dataset_id:
+                    raise ValueError("idempotency key belongs to another dataset")
+                return self.get(str(row[1])) or self.create({})
+        if self.dataset(dataset_id) is None:
+            raise KeyError(dataset_id)
+        job = self.create({"dataset_id": dataset_id, "stage": "queued"})
+        if idempotency_key:
+            with self._connect() as connection:
+                connection.execute("INSERT INTO analysis_requests VALUES (?, ?, ?)", (idempotency_key, dataset_id, job.job_id))
+        return job
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database)
         connection.execute("PRAGMA foreign_keys = ON")
@@ -224,6 +278,26 @@ def configured_jcode() -> bool:
 
 def configured_provider() -> bool:
     return bool(os.getenv(os.getenv("CLOUDRCA_GLM_API_KEY_ENV", "ZHIPU_API_KEY")))
+
+
+def validate_dataset(filename: str, content: bytes) -> dict[str, object]:
+    if len(content) > 10 * 1024 * 1024:
+        return {"valid": False, "error": "dataset exceeds 10 MiB limit"}
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".json", ".jsonl"}:
+        return {"valid": False, "error": "supported formats are .json and .jsonl"}
+    try:
+        if suffix == ".json":
+            records = json.loads(content)
+            count = len(records) if isinstance(records, list) else 1 if isinstance(records, dict) else 0
+        else:
+            records = [json.loads(line) for line in content.splitlines() if line.strip()]
+            count = len(records)
+        if not count or not all(isinstance(record, dict) for record in records if isinstance(records, list)):
+            raise ValueError("records must be JSON objects")
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+        return {"valid": False, "error": f"invalid dataset: {error}"}
+    return {"valid": True, "format": suffix.removeprefix("."), "record_count": count, "size_bytes": len(content)}
 
 
 def create_app(
@@ -260,6 +334,45 @@ def create_app(
     @app.post("/api/v1/analysis-jobs", status_code=202, response_model=Job)
     def create_job(request: CreateJob, tasks: BackgroundTasks) -> Job:
         job = repository.create(request.payload)
+        tasks.add_task(run, job.job_id)
+        return job
+
+    @app.post("/api/v1/datasets", status_code=201, response_model=Dataset)
+    async def upload_dataset(
+        file: UploadFile = File(), idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")
+    ) -> Dataset:
+        try:
+            return repository.create_dataset(file.filename or "upload", await file.read(), idempotency_key)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from None
+
+    @app.get("/api/v1/datasets/{dataset_id}/validation", response_model=dict[str, object])
+    def validation_summary(dataset_id: str) -> dict[str, object]:
+        dataset = repository.dataset(dataset_id)
+        if dataset is None:
+            raise HTTPException(status_code=404, detail="dataset not found")
+        return dataset.validation
+
+    @app.post("/api/v1/datasets/{dataset_id}/analysis", status_code=202, response_model=Job)
+    def analyze_dataset(dataset_id: str, tasks: BackgroundTasks, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")) -> Job:
+        try:
+            job = repository.analysis_request(dataset_id, idempotency_key)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="dataset not found") from None
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from None
+        if job.status is JobStatus.QUEUED:
+            tasks.add_task(run, job.job_id)
+        return job
+
+    @app.post("/api/v1/analysis-jobs/{job_id}/retry", status_code=202, response_model=Job)
+    def retry_job(job_id: str, tasks: BackgroundTasks) -> Job:
+        previous = repository.get(job_id)
+        if previous is None:
+            raise HTTPException(status_code=404, detail="analysis job not found")
+        if previous.status not in {JobStatus.FAILED, JobStatus.CANCELLED}:
+            raise HTTPException(status_code=409, detail="analysis job cannot be retried")
+        job = repository.create(previous.payload)
         tasks.add_task(run, job.job_id)
         return job
 
