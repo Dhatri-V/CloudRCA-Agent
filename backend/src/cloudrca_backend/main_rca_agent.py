@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -15,6 +15,7 @@ from .correlation import CorrelationGraph
 from .incident_grouping import CandidateIncident
 from .knowledge import RetrievedChunk
 from .orchestration import SpecialistWorkflowResult, WorkflowStatus
+from .settings import Settings, SettingsError
 from .specialist_runtime import (
     JCodeConfigurationError,
     JCodeProviderError,
@@ -23,7 +24,10 @@ from .specialist_runtime import (
     SpecialistFailureCode,
     SpecialistRuntimeConfig,
     TokenUsage,
+    _integer,
+    _number,
     _repair_prompt,
+    _required,
 )
 
 
@@ -58,6 +62,29 @@ class MainRcaError(RuntimeError):
     def __init__(self, code: SpecialistFailureCode, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+def load_main_rca_runtime_config(settings: Settings, environ: Mapping[str, str]) -> SpecialistRuntimeConfig:
+    """Load GLM/JCode settings while retaining only the credential variable name."""
+    api_key_env = environ.get("CLOUDRCA_GLM_API_KEY_ENV", "").strip() or None
+    try:
+        config = SpecialistRuntimeConfig(
+            jcode_binary=settings.jcode_binary,
+            provider_profile=_required(environ, "CLOUDRCA_GLM_PROVIDER_PROFILE"),
+            provider_base_url=_required(environ, "CLOUDRCA_GLM_BASE_URL"),
+            model=_required(environ, "CLOUDRCA_GLM_MODEL"),
+            api_key_env=api_key_env,
+            timeout_seconds=_number(environ, "CLOUDRCA_MAIN_RCA_TIMEOUT_SECONDS", 60),
+            max_events=_integer(environ, "CLOUDRCA_MAIN_RCA_MAX_EVENTS", 100),
+            max_prompt_characters=_integer(environ, "CLOUDRCA_MAIN_RCA_MAX_PROMPT_CHARACTERS", 50_000),
+            max_repair_attempts=_integer(environ, "CLOUDRCA_MAIN_RCA_MAX_REPAIR_ATTEMPTS", 1),
+            prompt_version=environ.get("CLOUDRCA_MAIN_RCA_PROMPT_VERSION", "main-rca-v1").strip(),
+        )
+    except ValidationError as exc:
+        raise SettingsError(f"Invalid main RCA configuration: {exc}") from exc
+    if config.api_key_env and not environ.get(config.api_key_env, "").strip():
+        raise SettingsError(f"Missing provider credential environment variable: {config.api_key_env}")
+    return config
 
 
 def build_main_rca_prompt(request: MainRcaRequest, prompt_version: str) -> str:
