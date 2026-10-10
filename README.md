@@ -188,11 +188,8 @@ Incident
 - Python
 - FastAPI
 
-**Infrastructure**
-- Docker
-
 **Frontend**
-- Web-based incident analysis dashboard
+- Python and Streamlit local incident analysis dashboard
 
 ---
 
@@ -233,6 +230,17 @@ Issue #2 pins JCode `v0.88.0` and records the Qwen/GLM-5.3 compatibility decisio
 ## Development
 
 See [`docs/development.md`](docs/development.md) for the short clean-checkout setup and quality commands.
+
+## Local dashboard
+
+Start the existing local API in one terminal, then run the Streamlit dashboard in another:
+
+```bash
+.venv/bin/cloudrca-api
+.venv/bin/streamlit run streamlit_app.py
+```
+
+The dashboard uses `CLOUDRCA_BACKEND_URL` when set and otherwise connects to `http://127.0.0.1:8000`.
 
 The shared event, topology, finding, incident, and RCA data formats are documented in [`docs/domain-contracts.md`](docs/domain-contracts.md).
 
