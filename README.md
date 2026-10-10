@@ -1,253 +1,110 @@
-# Agentic Cloud RCA
+# CloudRCA-Agent
 
-A multi-agent system for **cross-layer cloud root cause analysis (RCA)**.
+CloudRCA-Agent is a local Python application for evidence-backed, cross-layer cloud incident analysis. Upload a supported log dataset, follow its analysis job, inspect incident evidence, and review the resulting RCA report in a Streamlit dashboard.
 
-The system analyzes cloud infrastructure logs across multiple layers, identifies errors within each layer, correlates related failures across time, and determines the probable root-cause chain behind an incident.
-
-## 🎯 Objective
-
-Cloud failures are often visible in one layer while their actual cause originates in another.
-
-For example:
+## What it does
 
 ```text
-Hypervisor I/O degradation
-        ↓
-VM resource pressure
-        ↓
-Database slowdown
-        ↓
-Database connection timeout
+uploaded JSON / JSONL logs
+  -> normalization and layer routing
+  -> A1 database, A2 VM, and A3 hypervisor specialists
+  -> orchestration and incident grouping
+  -> temporal, topology, and cross-layer correlation
+  -> main RCA reasoning and report
+  -> FastAPI persistence/query API and Streamlit dashboard
 ```
 
-Instead of analyzing each error independently, this project aims to identify these **cross-layer relationships** using a multi-agent architecture.
+Specialist observations, hypotheses, components, time ranges, and evidence are validated before they can become part of an incident or report. The dashboard reuses the ingestion/analysis and incident-query APIs; it does not replace or duplicate the backend workflow.
 
----
+## Technology stack
 
-## 🏗️ Planned Architecture
+- Python 3.12
+- FastAPI and Pydantic v2 for the local backend API and contracts
+- SQLite for the local persistence implementation, with the selected retrieval/storage interfaces
+- Qwen-compatible specialist runtime for A1/A2/A3 and the configured main RCA-model integration
+- Python RAG/retrieval, orchestration, incident grouping, and cross-layer correlation components
+- Streamlit and Plotly for the local dashboard and visualizations
+- pytest, Ruff, and mypy for validation
 
-```text
-                   CLOUD LOG DATASET
-                          │
-                          ▼
-                 Log Parser / Cleaner
-                          │
-                          ▼
-              Timestamp Normalization
-                       → UTC
-                          │
-                          ▼
-                     Layer Router
-                          │
-              ┌───────────┼───────────┐
-              ▼           ▼           ▼
-             A1          A2          A3
-          Database       VM       Hypervisor
-            Agent       Agent        Agent
-           (Qwen)      (Qwen)       (Qwen)
-              │           │           │
-              └───────────┼───────────┘
-                          ▼
-                     MAIN AGENT
-                      GLM-5.3
-                          │
-                          ▼
-                Temporal Correlation
-                          │
-                          ▼
-               Cross-Layer Reasoning
-                          │
-                          ▼
-                  Root Cause Chain
-                          │
-                          ▼
-                   Incident Report
-```
+The active application and CI are Python-only. Running the project does **not** require Docker, containers, Docker Compose, React, Node.js, Vite, or TypeScript. The historical `frontend/` source and older decision records are retained as project history, but are not part of the supported local runtime.
 
-The multi-agent system will operate using **JCode as the agent harness**, providing the environment for agent coordination, tools, communication, context, and execution.
+## Input data
 
----
+Use the dashboard to upload supported JSON or JSONL log datasets (up to 10 MiB). Logs/datasets are uploaded to this system; there is no live AWS or CloudWatch ingestion. Keep credentials, production logs, and personally identifiable data out of the repository.
 
-## 🤖 Multi-Agent Design
+The committed fixtures are sanitized, reduced examples for deterministic tests. Dataset provenance and compatibility notes are in [docs/dataset-validation](docs/dataset-validation).
 
-### A1 — Database Agent
-Analyzes database-layer logs and extracts:
-- Database errors
-- Timestamp
-- Severity
-- Error type
-- Possible database-level causes
+## Local installation
 
-### A2 — VM Agent
-Analyzes guest OS / virtual machine logs and extracts:
-- Resource problems
-- Memory/CPU issues
-- OS-level failures
-- Timestamp
-- Possible VM-level causes
-
-### A3 — Hypervisor Agent
-Analyzes host/hypervisor logs and extracts:
-- Host resource issues
-- Virtualization failures
-- I/O problems
-- Timestamp
-- Possible infrastructure-level causes
-
-### Main RCA Agent
-
-The main agent receives findings from A1, A2, and A3 and performs:
-
-- Temporal correlation
-- Cross-layer event correlation
-- Causal reasoning
-- Root-cause hypothesis generation
-- Evidence-chain construction
-
----
-
-## 🧠 Model Architecture
-
-```text
-Qwen
-├── A1 Database Agent
-├── A2 VM Agent
-└── A3 Hypervisor Agent
-
-              ↓
-
-GLM-5.3
-└── Main Cross-Layer RCA Agent
-
-              ↓
-
-Incident Report
-```
-
-**JCode** acts as the harness coordinating the multi-agent workflow.
-
----
-
-## 🕐 Timestamp Normalization
-
-Logs may originate from systems using different time zones.
-
-Before agent analysis, timestamps are normalized to **UTC** so events from different infrastructure layers can be accurately correlated.
-
-```text
-Raw Logs
-   ↓
-Parse Timestamp
-   ↓
-Convert → UTC
-   ↓
-Layer-specific analysis
-```
-
----
-
-## 📄 Expected Incident Report
-
-The final system should produce structured incident reports containing:
-
-```text
-Incident
-│
-├── Detected Errors
-│   ├── Database
-│   ├── VM
-│   └── Hypervisor
-│
-├── Event Timeline
-│
-├── Cross-Layer Relationships
-│
-├── Probable Root Cause
-│
-├── Causal Chain
-│
-└── Supporting Evidence
-```
-
----
-
-## 🛠️ Planned Tech Stack
-
-**Agent Harness**
-- JCode
-
-**LLMs**
-- Qwen — specialist agents
-- GLM-5.3 — main RCA agent
-
-**AI / Retrieval**
-- RAG
-- Vector database
-
-**Backend**
-- Python
-- FastAPI
-
-**Frontend**
-- Python and Streamlit local incident analysis dashboard
-
----
-
-## 🚧 Project Status
-
-Currently under development.
-
-Development is being tracked through GitHub Issues, with each component implemented and tested independently before end-to-end integration.
-
-## Dataset validation
-
-Issue #1 validates AIOps2025 without committing its large raw archives. The compatibility decision and provenance are documented in:
-
-- [`docs/dataset-validation/aiops2025-compatibility.md`](docs/dataset-validation/aiops2025-compatibility.md)
-- [`docs/dataset-validation/provenance.md`](docs/dataset-validation/provenance.md)
-
-Create a Python 3.12 environment and install the validation dependencies:
+From a clean checkout, create and populate a project-local Python environment:
 
 ```bash
 python3.12 -m venv .venv
-.venv/bin/python -m pip install -e '.[dev]'
+.venv/bin/python -m pip install uv
+.venv/bin/uv sync --extra dev
+cp .env.example .env
 ```
 
-Profile an extracted subset and reproduce topology evidence:
+Configure `.env` for the services you intend to use. Do not commit it. At minimum, keep the local API/database settings suitable for your machine. Configure Qwen/GLM-compatible provider credentials and endpoints only when you intend to run a workflow that calls those providers; the repository does not supply credentials or make live provider claims.
 
-```bash
-.venv/bin/python scripts/validate_aiops2025_subset.py data/extracted/aiops2025 \
-  --profile-output reports/aiops2025_sample_profile.json \
-  --topology-output reports/aiops2025_topology_evidence.json
-```
+See [.env.example](.env.example) for the available setting names and [docs/development.md](docs/development.md) for the concise developer setup.
 
-Raw data belongs under `data/raw/` and extracted data under `data/extracted/`; both paths are ignored by Git. The committed fixtures are reduced and sanitized derivatives for deterministic testing only.
+## Run the local demo
 
-## JCode and model compatibility
+Use two terminals from the repository root.
 
-Issue #2 pins JCode `v0.88.0` and records the Qwen/GLM-5.3 compatibility decision in [`docs/architecture/0001-jcode-model-compatibility.md`](docs/architecture/0001-jcode-model-compatibility.md). The included smoke runner uses isolated temporary configuration, accepts credentials only through named environment variables, and validates structured model output. Live provider calls are optional and were not claimed without credentials.
-
-## Development
-
-See [`docs/development.md`](docs/development.md) for the short clean-checkout setup and quality commands.
-
-## Local dashboard
-
-Start the existing local API in one terminal, then run the Streamlit dashboard in another:
+Terminal 1 starts the API:
 
 ```bash
 .venv/bin/cloudrca-api
+```
+
+Terminal 2 starts Streamlit:
+
+```bash
 .venv/bin/streamlit run streamlit_app.py
 ```
 
-The dashboard uses `CLOUDRCA_BACKEND_URL` when set and otherwise connects to `http://127.0.0.1:8000`.
+Open the local URL printed by Streamlit (normally `http://localhost:8501`). The dashboard connects to `http://localhost:8000` by default; set `CLOUDRCA_BACKEND_URL` in `.env` if the API is elsewhere.
 
-The shared event, topology, finding, incident, and RCA data formats are documented in [`docs/domain-contracts.md`](docs/domain-contracts.md).
+### Short walkthrough
 
-The supported AIOps2025 parsing, UTC conversion, deduplication, and quarantine behavior is documented in [`docs/log-normalization.md`](docs/log-normalization.md).
+1. Open the **Upload and analysis** page and upload a JSON or JSONL fixture/dataset.
+2. Submit it for analysis, then use the job status controls to follow, retry, or cancel the job.
+3. Open **Incidents** and select an incident to inspect evidence, layer findings, timelines, and correlation links.
+4. Open the report view to review the RCA narrative and export it where offered.
+5. Treat observations as directly evidenced and hypotheses as explicitly labeled inferences.
 
-Deterministic layer routing and evidence-constrained topology behavior are documented in [`docs/layer-routing-topology.md`](docs/layer-routing-topology.md).
+## Tests and evaluation
 
-The isolated JCode/Qwen execution contract shared by future specialist agents is documented in [`docs/specialist-runtime.md`](docs/specialist-runtime.md).
+Run the full local validation suite:
 
-The versioned API, local job persistence, readiness checks, and upload contract are documented in [`docs/api.md`](docs/api.md).
+```bash
+.venv/bin/uv run pytest
+.venv/bin/uv run ruff check backend src scripts tests streamlit_app.py
+.venv/bin/uv run mypy backend/src src
+git diff --check
+```
+
+Run the deterministic evaluation coverage scorecard with:
+
+```bash
+.venv/bin/uv run python scripts/run_evaluation.py
+```
+
+The scorecard reports which pipeline stages have deterministic fixture coverage. It deliberately does **not** claim root-cause accuracy, precision, recall, F1, live-provider latency, or model-token cost: there is no end-to-end labeled RCA ground truth in the repository and CI does not call live providers. Do not present those metrics without collecting the required labeled data and measurements.
+
+## Limitations
+
+- Input is uploaded data, not a live CloudWatch/AWS integration.
+- Provider-backed analysis requires your own configured, reachable provider endpoint and credentials.
+- The repository currently has no end-to-end labeled RCA ground truth, so it makes no accuracy, precision, recall, or F1 claim.
+- The local persistence/runtime configuration is intended for demonstration and development; assess operational persistence, provider reliability, security, and scaling before production use.
+- Evidence-backed output reduces unsupported claims, but reported hypotheses remain hypotheses rather than confirmed facts.
+
+## Further documentation
+
+- [Development setup](docs/development.md)
+- [Dataset validation and provenance](docs/dataset-validation)
+- [Architecture decisions](docs/architecture)
+- [Evaluation coverage](evaluation/README.md)
