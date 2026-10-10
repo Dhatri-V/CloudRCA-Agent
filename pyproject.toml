@@ -36,6 +36,7 @@ dev = [
 [project.scripts]
 cloudrca-profile = "cloudrca_dataset_validation.cli:main"
 cloudrca-knowledge-refresh = "cloudrca_knowledge.cli:main"
+cloudrca-api = "cloudrca_backend.api:main"
 
 [tool.setuptools.packages.find]
 where = ["src", "backend/src"]
