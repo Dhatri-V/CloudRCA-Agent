@@ -13,6 +13,9 @@ def test_health_jobs_and_restart_persistence(tmp_path: Path) -> None:
     stored = TestClient(create_app(database)).get(f"/api/v1/analysis-jobs/{created['job_id']}").json()
     assert stored["payload"] == {"source": "test"}
     assert stored["status"] == "completed"
+    artifact = client.post(f"/api/v1/analysis-jobs/{created['job_id']}/artifacts?kind=report", json={"summary": "safe"}).json()
+    restored = TestClient(create_app(database)).get(f"/api/v1/analysis-jobs/{created['job_id']}/artifacts").json()
+    assert restored == [artifact]
 
 
 def test_job_transitions_are_valid(tmp_path: Path) -> None:

@@ -40,6 +40,13 @@ class Job(BaseModel):
     error: str | None = None
 
 
+class Artifact(BaseModel):
+    artifact_id: str
+    job_id: str
+    kind: str
+    payload: dict[str, object]
+
+
 class JobRepository:
     def __init__(self, database: Path) -> None:
         self.database = database
@@ -50,6 +57,9 @@ class JobRepository:
             connection.execute("""CREATE TABLE IF NOT EXISTS analysis_jobs (
                 job_id TEXT PRIMARY KEY, status TEXT NOT NULL, created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL, payload TEXT NOT NULL, error TEXT)""")
+            connection.execute("""CREATE TABLE IF NOT EXISTS analysis_artifacts (
+                artifact_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, kind TEXT NOT NULL,
+                payload TEXT NOT NULL, FOREIGN KEY(job_id) REFERENCES analysis_jobs(job_id))""")
 
     def create(self, payload: dict[str, object]) -> Job:
         now, job_id = datetime.now(UTC), str(uuid4())
@@ -72,6 +82,19 @@ class JobRepository:
         with self._connect() as connection:
             connection.execute("UPDATE analysis_jobs SET status = ?, updated_at = ?, error = ? WHERE job_id = ?", (status.value, now.isoformat(), error, job_id))
         return self.get(job_id) or current
+
+    def save_artifact(self, job_id: str, kind: str, payload: dict[str, object]) -> Artifact:
+        if self.get(job_id) is None:
+            raise KeyError(job_id)
+        artifact = Artifact(artifact_id=str(uuid4()), job_id=job_id, kind=kind, payload=payload)
+        with self._connect() as connection:
+            connection.execute("INSERT INTO analysis_artifacts VALUES (?, ?, ?, ?)", (artifact.artifact_id, job_id, kind, json.dumps(payload)))
+        return artifact
+
+    def artifacts(self, job_id: str) -> tuple[Artifact, ...]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT * FROM analysis_artifacts WHERE job_id = ? ORDER BY artifact_id", (job_id,)).fetchall()
+        return tuple(Artifact(artifact_id=str(row[0]), job_id=str(row[1]), kind=str(row[2]), payload=json.loads(str(row[3]))) for row in rows)
 
     def ready(self) -> bool:
         try:
@@ -105,7 +128,8 @@ def create_app(database: Path = Path("data/cloudrca.sqlite3")) -> FastAPI:
 
     @app.get("/readyz")
     def readiness() -> dict[str, object]:
-        return {"ready": repository.ready(), "database": repository.ready(), "jcode": "not_checked", "provider": "not_checked"}
+        database_ready = repository.ready()
+        return {"ready": database_ready, "database": database_ready, "jcode": "not_configured", "provider": "not_configured"}
 
     @app.post("/api/v1/analysis-jobs", status_code=202, response_model=Job)
     def create_job(request: CreateJob, tasks: BackgroundTasks) -> Job:
@@ -119,5 +143,18 @@ def create_app(database: Path = Path("data/cloudrca.sqlite3")) -> FastAPI:
         if job is None:
             raise HTTPException(status_code=404, detail="analysis job not found")
         return job
+
+    @app.post("/api/v1/analysis-jobs/{job_id}/artifacts", status_code=201, response_model=Artifact)
+    def save_artifact(job_id: str, kind: str, payload: dict[str, object]) -> Artifact:
+        try:
+            return repository.save_artifact(job_id, kind, payload)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="analysis job not found") from None
+
+    @app.get("/api/v1/analysis-jobs/{job_id}/artifacts", response_model=tuple[Artifact, ...])
+    def list_artifacts(job_id: str) -> tuple[Artifact, ...]:
+        if repository.get(job_id) is None:
+            raise HTTPException(status_code=404, detail="analysis job not found")
+        return repository.artifacts(job_id)
 
     return app
