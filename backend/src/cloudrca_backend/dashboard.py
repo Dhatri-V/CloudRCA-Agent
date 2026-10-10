@@ -103,6 +103,9 @@ class BackendClient:
     def list_evidence(self) -> Page:
         return self._model(Page, Request(self._url("/api/v1/evidence")))
 
+    def report(self, report_id: str) -> Artifact:
+        return self._model(Artifact, Request(self._url(f"/api/v1/reports/{report_id}")))
+
     def _model(self, model: type[ModelT], request: Request) -> ModelT:
         try:
             return model.model_validate(self._request_json(request))

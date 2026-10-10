@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import plotly.graph_objects as go
 import streamlit as st
 from cloudrca_backend.api import Dataset, Job, Page
@@ -167,6 +169,7 @@ def render_detail(settings: DashboardSettings) -> None:
     uncertainty = payload.get("uncertainty")
     if isinstance(uncertainty, str) and uncertainty:
         st.warning(uncertainty)
+    render_report(settings, payload)
     render_timeline_and_graph(payload)
     st.subheader("Findings")
     if not findings.items:
@@ -180,6 +183,32 @@ def render_detail(settings: DashboardSettings) -> None:
     for event in evidence.items:
         with st.expander(str(event.payload.get("event_id", event.artifact_id))):
             st.json(event.payload, expanded=False)
+
+
+def render_report(settings: DashboardSettings, incident: dict[str, object]) -> None:
+    report_id = incident.get("report_id")
+    if not isinstance(report_id, str):
+        st.info("No persisted RCA report is linked to this incident yet.")
+        return
+    try:
+        report = client(settings).report(report_id).payload
+    except BackendClientError as error:
+        st.error(str(error))
+        return
+    st.subheader("RCA report")
+    root = report.get("probable_root_cause")
+    if isinstance(root, str):
+        st.warning(f"Probable root cause (hypothesis): {root}")
+    confidence = report.get("confidence")
+    if confidence is not None:
+        st.caption(f"Model confidence: {confidence}")
+    if isinstance(report.get("uncertainty"), str):
+        st.info(f"Uncertainty: {report['uncertainty']}")
+    st.json(report, expanded=False)
+    exported = json.dumps(report, indent=2, sort_keys=True, default=str)
+    st.download_button("Download report JSON", exported, file_name=f"{report_id}.json", mime="application/json")
+    markdown = f"# RCA report\n\n## Probable root cause (hypothesis)\n\n{root or 'Not available'}\n\n## Evidence\n\n{exported}\n"
+    st.download_button("Download report Markdown", markdown, file_name=f"{report_id}.md", mime="text/markdown")
 
 
 def render_timeline_and_graph(payload: dict[str, object]) -> None:
