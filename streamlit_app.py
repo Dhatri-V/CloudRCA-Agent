@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import plotly.graph_objects as go
 import streamlit as st
 from cloudrca_backend.api import Dataset, Job, Page
 from cloudrca_backend.dashboard import (
@@ -166,6 +167,7 @@ def render_detail(settings: DashboardSettings) -> None:
     uncertainty = payload.get("uncertainty")
     if isinstance(uncertainty, str) and uncertainty:
         st.warning(uncertainty)
+    render_timeline_and_graph(payload)
     st.subheader("Findings")
     if not findings.items:
         st.info("No persisted findings are available for this incident.")
@@ -178,6 +180,29 @@ def render_detail(settings: DashboardSettings) -> None:
     for event in evidence.items:
         with st.expander(str(event.payload.get("event_id", event.artifact_id))):
             st.json(event.payload, expanded=False)
+
+
+def render_timeline_and_graph(payload: dict[str, object]) -> None:
+    timeline = [item for item in payload.get("timeline", []) if isinstance(item, dict)] if isinstance(payload.get("timeline"), list) else []
+    st.subheader("UTC timeline")
+    if not timeline:
+        st.info("No canonical timeline is persisted for this incident.")
+    else:
+        ordered = sorted(timeline, key=lambda item: str(item.get("timestamp", "")))
+        figure = go.Figure(go.Scatter(x=[item.get("timestamp") for item in ordered], y=[item.get("layer", "event") for item in ordered], mode="markers", text=[item.get("summary", "") for item in ordered], hovertemplate="%{x}<br>%{y}<br>%{text}<extra></extra>"))
+        figure.update_layout(xaxis_title="UTC", yaxis_title="Layer", height=300)
+        st.plotly_chart(figure, use_container_width=True)
+        st.dataframe(ordered, use_container_width=True, hide_index=True)
+    chain = [item for item in payload.get("causal_chain", []) if isinstance(item, dict)] if isinstance(payload.get("causal_chain"), list) else []
+    st.subheader("Causal graph")
+    if not chain:
+        st.info("No persisted causal graph is available for this incident.")
+        return
+    nodes = [str(item.get("cause_id", "cause")) for item in chain] + [str(chain[-1].get("effect_id", "effect"))]
+    graph = go.Figure(go.Scatter(x=list(range(len(nodes))), y=[0] * len(nodes), mode="lines+markers+text", text=nodes, textposition="top center", hovertemplate="%{text}<extra></extra>"))
+    graph.update_layout(xaxis=dict(visible=False), yaxis=dict(visible=False), height=220)
+    st.plotly_chart(graph, use_container_width=True)
+    st.dataframe(chain, use_container_width=True, hide_index=True)
 
 
 render()
