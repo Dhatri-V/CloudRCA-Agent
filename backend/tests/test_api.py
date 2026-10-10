@@ -49,3 +49,16 @@ def test_job_transitions_are_valid(tmp_path: Path) -> None:
         assert "invalid transition" in str(error)
     else:
         raise AssertionError("terminal jobs cannot resume")
+
+
+def test_dataset_upload_validation_and_idempotent_analysis(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path / "api.sqlite3"))
+    invalid = client.post("/api/v1/datasets", files={"file": ("bad.txt", b"no", "text/plain")})
+    assert invalid.status_code == 422
+    headers = {"Idempotency-Key": "dataset-1"}
+    dataset = client.post("/api/v1/datasets", files={"file": ("events.json", b'{"event":"ok"}', "application/json")}, headers=headers).json()
+    assert client.get(f"/api/v1/datasets/{dataset['dataset_id']}/validation").json()["valid"] is True
+    analysis_headers = {"Idempotency-Key": "analysis-1"}
+    first = client.post(f"/api/v1/datasets/{dataset['dataset_id']}/analysis", headers=analysis_headers).json()
+    second = client.post(f"/api/v1/datasets/{dataset['dataset_id']}/analysis", headers=analysis_headers).json()
+    assert first["job_id"] == second["job_id"]

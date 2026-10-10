@@ -13,6 +13,7 @@ dependencies = [
   "fastapi>=0.115,<1",
   "networkx>=3.4,<4",
   "polars>=1.30,<2",
+  "python-multipart>=0.0.20,<1",
   "python-dateutil>=2.9,<3",
   "sentence-transformers>=3.0,<4",
   "pyyaml>=6.0,<7",
