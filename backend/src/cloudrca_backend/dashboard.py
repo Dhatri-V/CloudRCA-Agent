@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from datetime import UTC, datetime
+from typing import TypeVar
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+from .api import Dataset, Job, Page
+
+ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 class DashboardSettings(BaseModel):
@@ -39,7 +46,7 @@ class BackendClientError(RuntimeError):
 
 
 class BackendClient:
-    """Small read-only client boundary used by Streamlit pages."""
+    """Small client boundary used by Streamlit pages."""
 
     def __init__(self, settings: DashboardSettings) -> None:
         self._settings = settings
@@ -48,9 +55,57 @@ class BackendClient:
         return self.get_json("/healthz")
 
     def get_json(self, path: str) -> dict[str, object]:
+        return self._request_json(Request(self._url(path), headers={"Accept": "application/json"}))
+
+    def upload_dataset(self, filename: str, content: bytes, content_type: str) -> Dataset:
+        boundary = f"cloudrca-{uuid4().hex}"
+        safe_filename = filename.replace('"', "_").replace("\r", "_").replace("\n", "_")
+        body = b"".join(
+            (
+                f"--{boundary}\r\n".encode(),
+                f'Content-Disposition: form-data; name="file"; filename="{safe_filename}"\r\n'.encode(),
+                f"Content-Type: {content_type}\r\n\r\n".encode(),
+                content,
+                f"\r\n--{boundary}--\r\n".encode(),
+            )
+        )
+        request = Request(
+            self._url("/api/v1/datasets"),
+            data=body,
+            headers={"Accept": "application/json", "Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        return self._model(Dataset, request)
+
+    def start_analysis(self, dataset_id: str) -> Job:
+        return self._model(Job, Request(self._url(f"/api/v1/datasets/{dataset_id}/analysis"), data=b"", method="POST"))
+
+    def get_job(self, job_id: str) -> Job:
+        return self._model(Job, Request(self._url(f"/api/v1/analysis-jobs/{job_id}")))
+
+    def cancel_job(self, job_id: str) -> Job:
+        return self._model(Job, Request(self._url(f"/api/v1/analysis-jobs/{job_id}/cancel"), data=b"", method="POST"))
+
+    def retry_job(self, job_id: str) -> Job:
+        return self._model(Job, Request(self._url(f"/api/v1/analysis-jobs/{job_id}/retry"), data=b"", method="POST"))
+
+    def list_incidents(self, filters: Mapping[str, str], offset: int = 0, limit: int = 20) -> Page:
+        query = {key: value for key, value in filters.items() if value}
+        query.update({"offset": str(offset), "limit": str(limit)})
+        return self._model(Page, Request(self._url(f"/api/v1/incidents?{urlencode(query)}")))
+
+    def _model(self, model: type[ModelT], request: Request) -> ModelT:
+        try:
+            return model.model_validate(self._request_json(request))
+        except ValidationError as error:
+            raise BackendClientError("The CloudRCA backend returned an unexpected response.") from error
+
+    def _url(self, path: str) -> str:
         if not path.startswith("/"):
             raise ValueError("API paths must start with '/'")
-        request = Request(f"{self._settings.backend_url}{path}", headers={"Accept": "application/json"})
+        return f"{self._settings.backend_url}{path}"
+
+    def _request_json(self, request: Request) -> dict[str, object]:
         try:
             with urlopen(request, timeout=self._settings.timeout_seconds) as response:  # noqa: S310 - configured local API URL
                 payload: object = json.loads(response.read().decode("utf-8"))
@@ -78,6 +133,15 @@ def evidence_label(event_ids: tuple[str, ...]) -> str:
     if not event_ids:
         return "Evidence: none"
     return f"Evidence: {', '.join(event_ids)}"
+
+
+def incident_summary(incident: Mapping[str, object]) -> str:
+    """Use the API's supported fields to provide a safe concise incident label."""
+    for key in ("probable_cause", "summary", "title", "incident_id"):
+        value = incident.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return "Incident details are not yet available."
 
 
 def severity_tone(severity: str) -> str:
