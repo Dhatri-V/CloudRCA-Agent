@@ -71,6 +71,17 @@ from .incident_grouping import (
     GroupingReasonType,
     IncidentGrouper,
 )
+from .knowledge import (
+    EMBEDDING_MODEL,
+    KnowledgeChunk,
+    KnowledgeDocument,
+    RetrievedChunk,
+    SentenceTransformerEmbedder,
+    SqliteKnowledgeRepository,
+    chunk_document,
+    parse_markdown_document,
+    refresh_corpus,
+)
 from .normalization import (
     BatchStatistics,
     DuplicateRecord,
@@ -144,6 +155,15 @@ from .vm_agent import (
 )
 
 __all__ = [
+    "EMBEDDING_MODEL",
+    "KnowledgeChunk",
+    "KnowledgeDocument",
+    "RetrievedChunk",
+    "SentenceTransformerEmbedder",
+    "SqliteKnowledgeRepository",
+    "chunk_document",
+    "parse_markdown_document",
+    "refresh_corpus",
     "CONTRACT_VERSION",
     "BatchStatistics",
     "AnalysisBatch",
@@ -199,6 +219,8 @@ __all__ = [
     "JCodeProviderError",
     "JCodeResponse",
     "JCodeTimeoutError",
+    "KnowledgeChunk",
+    "KnowledgeDocument",
     "Layer",
     "ModelRuntimeProvenance",
     "NormalizedEvent",
@@ -214,6 +236,7 @@ __all__ = [
     "RejectionReason",
     "RelationshipType",
     "RootCauseHypothesis",
+    "RetrievedChunk",
     "RoutedEvent",
     "RoutingConfig",
     "RoutingDecision",
@@ -234,6 +257,8 @@ __all__ = [
     "SpecialistStructuredRunResult",
     "SpecialistWorkflowResult",
     "Severity",
+    "SentenceTransformerEmbedder",
+    "SqliteKnowledgeRepository",
     "TimelineEntry",
     "TimeWindow",
     "TopologyRelationship",

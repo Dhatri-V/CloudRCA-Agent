@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.12.*"
 
 [[package]]
@@ -252,6 +252,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-dateutil" },
     { name = "pyyaml" },
+    { name = "sentence-transformers" },
     { name = "structlog" },
 ]
 
@@ -271,7 +272,6 @@ dev = [
 dev = [
     { name = "alembic" },
     { name = "psycopg", extra = ["binary"] },
-    { name = "sentence-transformers" },
     { name = "sqlalchemy" },
 ]
 
@@ -288,6 +288,7 @@ requires-dist = [
     { name = "python-dateutil", specifier = ">=2.9,<3" },
     { name = "pyyaml", specifier = ">=6.0,<7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.13,<1" },
+    { name = "sentence-transformers", specifier = ">=3.0,<4" },
     { name = "structlog", specifier = ">=25.4,<26" },
     { name = "types-networkx", marker = "extra == 'dev'", specifier = ">=3.4,<4" },
     { name = "types-python-dateutil", marker = "extra == 'dev'", specifier = ">=2.9,<3" },
@@ -299,7 +300,6 @@ provides-extras = ["dev"]
 dev = [
     { name = "alembic", specifier = ">=1.14,<2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
-    { name = "sentence-transformers", specifier = ">=3.0,<4" },
     { name = "sqlalchemy", specifier = ">=2.0,<3" },
 ]
 
