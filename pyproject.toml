@@ -10,12 +10,15 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
   "charset-normalizer>=3.4,<4",
   "pydantic>=2.12,<3",
+  "fastapi>=0.115,<1",
   "networkx>=3.4,<4",
   "polars>=1.30,<2",
   "python-dateutil>=2.9,<3",
   "sentence-transformers>=3.0,<4",
   "pyyaml>=6.0,<7",
   "structlog>=25.4,<26",
+  "sqlalchemy>=2.0,<3",
+  "uvicorn>=0.30,<1",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +36,7 @@ dev = [
 [project.scripts]
 cloudrca-profile = "cloudrca_dataset_validation.cli:main"
 cloudrca-knowledge-refresh = "cloudrca_knowledge.cli:main"
+cloudrca-api = "cloudrca_backend.api:main"
 
 [tool.setuptools.packages.find]
 where = ["src", "backend/src"]
@@ -62,5 +66,4 @@ exclude = ["notebooks"]
 dev = [
     "alembic>=1.14,<2",
     "psycopg[binary]>=3.2,<4",
-    "sqlalchemy>=2.0,<3",
 ]

@@ -241,3 +241,5 @@ The supported AIOps2025 parsing, UTC conversion, deduplication, and quarantine b
 Deterministic layer routing and evidence-constrained topology behavior are documented in [`docs/layer-routing-topology.md`](docs/layer-routing-topology.md).
 
 The isolated JCode/Qwen execution contract shared by future specialist agents is documented in [`docs/specialist-runtime.md`](docs/specialist-runtime.md).
+
+The versioned API, local job persistence, readiness checks, and upload contract are documented in [`docs/api.md`](docs/api.md).
