@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -258,6 +259,19 @@ def build_specialist_prompt(request: SpecialistRequest, prompt_version: str) -> 
         f"INPUT={json.dumps(payload, sort_keys=True, separators=(',', ':'))}",
     )
     return "\n".join(sections)
+
+
+_WHOLE_REPLY_FENCE = re.compile(r"\A\s*```[A-Za-z0-9_-]*[ \t]*\r?\n(?P<body>.*?)\r?\n?```\s*\Z", re.DOTALL)
+
+
+def unwrap_code_fence(text: str) -> str:
+    """Remove one Markdown code fence that wraps the entire reply; otherwise return the text unchanged.
+
+    Models such as Qwen often answer with ```json ... ```. Only a fence around the whole reply is removed,
+    so prose before or after JSON still fails strict validation.
+    """
+    match = _WHOLE_REPLY_FENCE.match(text)
+    return match.group("body") if match else text
 
 
 def _repair_prompt(
@@ -563,7 +577,7 @@ class SpecialistRuntime:
                     session_id = response.session_id
                     usage = usage.plus(response.usage)
                     try:
-                        output = response_validator(response.text, request)
+                        output = response_validator(unwrap_code_fence(response.text), request)
                         break
                     except (ValueError, json.JSONDecodeError) as exc:
                         if repair_count >= self._config.max_repair_attempts:
