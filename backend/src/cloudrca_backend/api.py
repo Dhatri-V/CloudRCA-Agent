@@ -177,6 +177,15 @@ class JobRepository:
             )
         return artifact
 
+    def save_artifacts(self, job_id: str, items: tuple[tuple[ArtifactKind, dict[str, object]], ...]) -> int:
+        """Persist one job's generated artifacts in a single transaction, so a failure stores none of them."""
+        if self.get(job_id) is None:
+            raise KeyError(job_id)
+        rows = [(str(uuid4()), job_id, kind.value, json.dumps(payload)) for kind, payload in items]
+        with self._connect() as connection:
+            connection.executemany("INSERT INTO analysis_artifacts VALUES (?, ?, ?, ?)", rows)
+        return len(rows)
+
     def artifacts(self, job_id: str) -> tuple[Artifact, ...]:
         with self._connect() as connection:
             rows = connection.execute(
@@ -258,6 +267,11 @@ class JobRepository:
             )
         return dataset
 
+    def dataset_content(self, dataset_id: str) -> tuple[str, bytes] | None:
+        with self._connect() as connection:
+            row = connection.execute("SELECT filename, content FROM datasets WHERE dataset_id = ?", (dataset_id,)).fetchone()
+        return (str(row[0]), bytes(row[1])) if row else None
+
     def dataset(self, dataset_id: str) -> Dataset | None:
         with self._connect() as connection:
             row = connection.execute("SELECT dataset_id, filename, sha256, validation FROM datasets WHERE dataset_id = ?", (dataset_id,)).fetchone()
@@ -333,15 +347,23 @@ def create_app(
     def run(job_id: str) -> None:
         try:
             job = repository.transition(job_id, JobStatus.RUNNING)
-            result = runner(job.payload)
-            for kind, payload in result.artifacts:
-                repository.save_artifact(job_id, kind, payload)
-            repository.transition(job_id, result.status, result.error)
         except (KeyError, ValueError):
-            return
-        except Exception:
-            logger.error("analysis_job_failed", job_id=job_id)
-            repository.transition(job_id, JobStatus.FAILED, "analysis job failed")
+            return  # missing, or cancelled before it started
+        try:
+            result = runner(job.payload)
+            current = repository.get(job_id)
+            if current is None or current.status is not JobStatus.RUNNING:
+                logger.info("analysis_job_result_discarded", job_id=job_id)
+                return  # cancelled while running; do not attach results to a cancelled job
+            repository.save_artifacts(job_id, result.artifacts)
+            repository.transition(job_id, result.status, result.error)
+        except Exception as exc:
+            # Only the exception type is logged: messages may contain provider output or dataset content.
+            logger.error("analysis_job_failed", job_id=job_id, error_type=type(exc).__name__)
+            try:
+                repository.transition(job_id, JobStatus.FAILED, "analysis job failed")
+            except Exception as transition_error:
+                logger.error("analysis_job_state_not_recorded", job_id=job_id, error_type=type(transition_error).__name__)
 
     @app.get("/healthz")
     def health() -> dict[str, str]:
@@ -439,7 +461,7 @@ def create_app(
         start_utc: str | None = None, end_utc: str | None = None, offset: int = 0, limit: int = 50
     ) -> Page:
         filters = {key: value for key, value in {"severity": severity, "status": status, "layer": layer}.items() if value}
-        response = page(ArtifactKind.INCIDENT, 0, 100, filters)
+        response = page(ArtifactKind.INCIDENT, 0, -1, filters)  # filter every incident before paginating
         if start_utc or end_utc:
             response.items = [item for item in response.items if (not start_utc or str(item.payload.get("timestamp", "")) >= start_utc) and (not end_utc or str(item.payload.get("timestamp", "")) <= end_utc)]
             response.total = len(response.items)
@@ -499,5 +521,8 @@ def create_app(
 
 
 def main() -> None:
+    from .pipeline import build_production_pipeline
+
     database = Path(os.getenv("CLOUDRCA_API_DATABASE", "data/cloudrca.sqlite3"))
-    uvicorn.run(create_app(database), host="127.0.0.1", port=8000)
+    runner = build_production_pipeline(JobRepository(database).dataset_content)
+    uvicorn.run(create_app(database, runner), host="127.0.0.1", port=8000)
