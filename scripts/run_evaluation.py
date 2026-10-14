@@ -15,6 +15,10 @@ TESTS = (
     "backend/tests/test_reporting.py",
     "backend/tests/test_api.py",
     "backend/tests/test_dashboard.py",
+    "backend/tests/test_pipeline.py",
+    "backend/tests/test_api_pipeline.py",
+    "backend/tests/test_dashboard_results.py",
+    "backend/tests/test_end_to_end.py",
 )
 
 
@@ -24,7 +28,7 @@ def main() -> int:
     scorecard = {
         "mode": "deterministic local regression",
         "pytest_exit_code": result,
-        "covered_stages": ["normalization", "routing", "orchestration", "correlation", "main_rca_validation", "reporting", "api", "streamlit_client"],
+        "covered_stages": ["normalization", "routing", "orchestration", "correlation", "main_rca_validation", "reporting", "api", "streamlit_client", "pipeline_runner", "end_to_end_scripted_llm"],
         "not_measured": ["root_cause_accuracy", "precision", "recall", "f1", "live_provider_latency", "model_token_cost"],
         "reason": "The committed fixtures do not provide labeled end-to-end RCA ground truth and CI does not call live providers.",
     }

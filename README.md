@@ -30,7 +30,7 @@ The active application and CI are Python-only. Running the project does **not** 
 
 ## Input data
 
-Use the dashboard to upload supported JSON or JSONL log datasets (up to 10 MiB). Logs/datasets are uploaded to this system; there is no live AWS or CloudWatch ingestion. Keep credentials, production logs, and personally identifiable data out of the repository.
+Use the dashboard to upload AIOps2025-shaped JSON or JSONL log/metric records (up to 10 MiB). Records the normalizer does not recognize are counted as rejected and reported in the job summary. Logs/datasets are uploaded to this system; there is no live AWS or CloudWatch ingestion. Keep credentials, production logs, and personally identifiable data out of the repository.
 
 The committed fixtures are sanitized, reduced examples for deterministic tests. Dataset provenance and compatibility notes are in [docs/dataset-validation](docs/dataset-validation).
 
@@ -45,7 +45,7 @@ python3.12 -m venv .venv
 cp .env.example .env
 ```
 
-Configure `.env` for the services you intend to use. Do not commit it. At minimum, keep the local API/database settings suitable for your machine. Configure Qwen/GLM-compatible provider credentials and endpoints only when you intend to run a workflow that calls those providers; the repository does not supply credentials or make live provider claims.
+Configure `.env` for the services you intend to use, then export it in each terminal before starting the API (`set -a; source .env; set +a`); the application reads the process environment and does not load `.env` itself. Do not commit it. At minimum, keep the local API/database settings suitable for your machine. Configure Qwen/GLM-compatible provider credentials and endpoints only when you intend to run a workflow that calls those providers; the repository does not supply credentials or make live provider claims.
 
 See [.env.example](.env.example) for the available setting names and [docs/development.md](docs/development.md) for the concise developer setup.
 
@@ -53,11 +53,14 @@ See [.env.example](.env.example) for the available setting names and [docs/devel
 
 Use two terminals from the repository root.
 
-Terminal 1 starts the API:
+Terminal 1 starts the API, which runs the RCA pipeline for each analysis job:
 
 ```bash
+set -a; source .env; set +a
 .venv/bin/cloudrca-api
 ```
+
+Analysis calls the configured Qwen specialists and GLM main-RCA model through JCode. If the JCode binary, provider settings, or provider key are missing, the job finishes as `failed` with an error naming the missing setting; normalized events and candidate incidents are still stored for inspection.
 
 Terminal 2 starts Streamlit:
 
@@ -70,8 +73,8 @@ Open the local URL printed by Streamlit (normally `http://localhost:8501`). The 
 ### Short walkthrough
 
 1. Open the **Upload and analysis** page and upload a JSON or JSONL fixture/dataset.
-2. Submit it for analysis, then use the job status controls to follow, retry, or cancel the job.
-3. Open **Incidents** and select an incident to inspect evidence, layer findings, timelines, and correlation links.
+2. Submit it for analysis, then use the job status controls to follow, retry, or cancel the job. When it finishes, the page lists the job's event counts and incidents with their analysis outcomes.
+3. Open an incident from the job results or **Incidents**, then **Evidence** to inspect that incident's findings, cited events, timeline, and RCA report. Incidents where specialists found no anomaly are labeled *insufficient evidence* and have no report.
 4. Open the report view to review the RCA narrative and export it where offered.
 5. Treat observations as directly evidenced and hypotheses as explicitly labeled inferences.
 
@@ -97,7 +100,9 @@ The scorecard reports which pipeline stages have deterministic fixture coverage.
 ## Limitations
 
 - Input is uploaded data, not a live CloudWatch/AWS integration.
-- Provider-backed analysis requires your own configured, reachable provider endpoint and credentials.
+- Provider-backed analysis requires your own configured, reachable provider endpoint and credentials. Automated tests script the LLM responses from each prompt's input; they verify pipeline wiring and evidence validation, not live model behavior.
+- Each job analyzes at most `CLOUDRCA_PIPELINE_MAX_INCIDENTS` incidents (default 10, highest severity first); the rest are stored as `not_analyzed` and the job is marked `partial`. Knowledge-base retrieval is not yet passed to the main RCA step.
+- Jobs run in-process inside the API; a long LLM-backed job occupies that process until it finishes.
 - The repository currently has no end-to-end labeled RCA ground truth, so it makes no accuracy, precision, recall, or F1 claim.
 - The local persistence/runtime configuration is intended for demonstration and development; assess operational persistence, provider reliability, security, and scaling before production use.
 - Evidence-backed output reduces unsupported claims, but reported hypotheses remain hypotheses rather than confirmed facts.
