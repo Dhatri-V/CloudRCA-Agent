@@ -94,6 +94,7 @@ class Page(BaseModel):
 class AnalysisResult:
     status: JobStatus = JobStatus.COMPLETED
     artifacts: tuple[tuple[ArtifactKind, dict[str, object]], ...] = ()
+    error: str | None = None
 
 
 AnalysisRunner = Callable[[dict[str, object]], AnalysisResult]
@@ -335,7 +336,7 @@ def create_app(
             result = runner(job.payload)
             for kind, payload in result.artifacts:
                 repository.save_artifact(job_id, kind, payload)
-            repository.transition(job_id, result.status)
+            repository.transition(job_id, result.status, result.error)
         except (KeyError, ValueError):
             return
         except Exception:

@@ -181,6 +181,11 @@ class IncidentGrouper:
         candidates = tuple(self._candidate(tuple(ordered[index] for index in indices), reasons, indices, workflow) for indices in groups.values())
         return CandidateIncidentSet(incidents=tuple(sorted(candidates, key=lambda item: (item.time_window.start, item.incident_id))))
 
+    def attach_findings(self, incident: CandidateIncident, workflow: SpecialistWorkflowResult) -> CandidateIncident:
+        """Attach a workflow's evidence-bound findings to an already grouped candidate incident."""
+        event_ids = tuple(sorted(item.reference_id for item in incident.source_events))
+        return incident.model_copy(update={"findings": self._findings(event_ids, workflow)})
+
     def _candidate(
         self,
         events: tuple[RoutedEvent, ...],
