@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TypeVar
 from urllib.error import HTTPError, URLError
@@ -12,7 +13,7 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 
 from .api import Artifact, Dataset, Job, Page
 
@@ -103,6 +104,13 @@ class BackendClient:
     def list_evidence(self) -> Page:
         return self._model(Page, Request(self._url("/api/v1/evidence")))
 
+    def job_artifacts(self, job_id: str) -> list[Artifact]:
+        request = Request(self._url(f"/api/v1/analysis-jobs/{job_id}/artifacts"), headers={"Accept": "application/json"})
+        try:
+            return TypeAdapter(list[Artifact]).validate_python(self._request_payload(request))
+        except ValidationError as error:
+            raise BackendClientError("The CloudRCA backend returned an unexpected response.") from error
+
     def report(self, report_id: str) -> Artifact:
         return self._model(Artifact, Request(self._url(f"/api/v1/reports/{report_id}")))
 
@@ -117,12 +125,16 @@ class BackendClient:
             raise ValueError("API paths must start with '/'")
         return f"{self._settings.backend_url}{path}"
 
-    def _request_json(self, request: Request) -> dict[str, object]:
+    def _request_payload(self, request: Request) -> object:
         try:
             with urlopen(request, timeout=self._settings.timeout_seconds) as response:  # noqa: S310 - configured local API URL
                 payload: object = json.loads(response.read().decode("utf-8"))
         except (HTTPError, URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as error:
             raise BackendClientError("The CloudRCA backend is unavailable or returned an invalid response.") from error
+        return payload
+
+    def _request_json(self, request: Request) -> dict[str, object]:
+        payload = self._request_payload(request)
         if not isinstance(payload, dict):
             raise BackendClientError("The CloudRCA backend returned an unexpected response.")
         return payload
@@ -169,3 +181,42 @@ def layer_state(payload: Mapping[str, object], layer: str) -> str:
 def severity_tone(severity: str) -> str:
     """Map known severity values to Streamlit's accessible built-in status tones."""
     return {"critical": "error", "high": "warning", "medium": "info", "low": "success"}.get(severity.lower(), "info")
+
+
+@dataclass(frozen=True, slots=True)
+class IncidentEvidence:
+    """One incident's own persisted findings, events, graph, and report from its analysis job."""
+
+    findings: tuple[Artifact, ...]
+    events: tuple[Artifact, ...]
+    graph: Artifact | None
+    report: Artifact | None
+
+
+def incident_evidence(incident: Artifact, job_artifacts: Sequence[Artifact]) -> IncidentEvidence:
+    """Scope a job's artifacts to one incident by its identifier and cited event IDs."""
+    incident_id = incident.payload.get("incident_id")
+    raw_event_ids = incident.payload.get("event_ids")
+    event_ids = {str(item) for item in raw_event_ids} if isinstance(raw_event_ids, list) else set()
+    same_job = [item for item in job_artifacts if item.job_id == incident.job_id]
+
+    def owned(kind: str) -> tuple[Artifact, ...]:
+        return tuple(item for item in same_job if item.kind.value == kind and incident_id and item.payload.get("incident_id") == incident_id)
+
+    graphs, reports = owned("graph"), owned("report")
+    return IncidentEvidence(
+        findings=owned("finding"),
+        events=tuple(item for item in same_job if item.kind.value == "event" and str(item.payload.get("event_id")) in event_ids),
+        graph=graphs[0] if graphs else None,
+        report=reports[0] if reports else None,
+    )
+
+
+def job_run_summary(job_artifacts: Sequence[Artifact]) -> dict[str, object]:
+    """Return the pipeline's persisted run summary, or an empty mapping when none was recorded."""
+    return next((item.payload for item in job_artifacts if item.kind.value == "run"), {})
+
+
+def outcome_tone(outcome: str) -> str:
+    """Map pipeline analysis outcomes to Streamlit tones; failures are never shown as success."""
+    return {"rca_reported": "success", "insufficient_evidence": "info"}.get(outcome, "error")

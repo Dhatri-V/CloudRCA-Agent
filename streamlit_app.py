@@ -6,14 +6,17 @@ import json
 
 import plotly.graph_objects as go
 import streamlit as st
-from cloudrca_backend.api import Dataset, Job, Page
+from cloudrca_backend.api import Artifact, Dataset, Job, Page
 from cloudrca_backend.dashboard import (
     BackendClient,
     BackendClientError,
     DashboardSettings,
     display_label,
+    incident_evidence,
     incident_summary,
+    job_run_summary,
     layer_state,
+    outcome_tone,
 )
 
 
@@ -105,8 +108,50 @@ def render_job(settings: DashboardSettings, job: Job) -> None:
             st.error(str(error))
     if status == "partial":
         st.warning("Analysis completed partially. Available incidents remain safe to inspect.")
+        if job.error:
+            st.caption(job.error)
     elif status == "failed":
         st.error(job.error or "Analysis failed.")
+    if status in {"completed", "partial", "failed"}:
+        render_job_results(settings, job)
+
+
+def render_job_results(settings: DashboardSettings, job: Job) -> None:
+    try:
+        artifacts = client(settings).job_artifacts(job.job_id)
+    except BackendClientError as error:
+        st.error(str(error))
+        return
+    summary = job_run_summary(artifacts)
+    normalization = summary.get("normalization")
+    if isinstance(normalization, dict):
+        accepted, rejected, duplicates = st.columns(3)
+        accepted.metric("Events analyzed", normalization.get("accepted", 0))
+        rejected.metric("Records rejected", normalization.get("rejected", 0))
+        duplicates.metric("Duplicates skipped", normalization.get("duplicates", 0))
+    incidents = [item for item in artifacts if item.kind.value == "incident"]
+    st.subheader("Incidents from this analysis")
+    if not incidents:
+        st.info("This analysis produced no incidents.")
+        return
+    st.dataframe(
+        [
+            {
+                "summary": incident_summary(item.payload),
+                "outcome": display_label(str(item.payload.get("analysis_outcome", "unknown"))),
+                "severity": item.payload.get("severity"),
+                "layer": item.payload.get("layer"),
+                "start (UTC)": item.payload.get("timestamp"),
+            }
+            for item in incidents
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+    for item in incidents:
+        if st.button(f"Open: {incident_summary(item.payload)[:80]}", key=f"job-{item.artifact_id}"):
+            st.session_state["selected_incident_id"] = item.artifact_id
+            st.success("Incident selected. Open Evidence to inspect findings and cited events.")
 
 
 def render_incidents(settings: DashboardSettings) -> None:
@@ -132,7 +177,7 @@ def render_incidents(settings: DashboardSettings) -> None:
     for item in incidents:
         payload = item.payload
         with st.expander(incident_summary(payload)):
-            st.write({key: payload.get(key) for key in ("severity", "timestamp", "layer", "status")})
+            st.write({key: payload.get(key) for key in ("severity", "timestamp", "layer", "status", "analysis_outcome")})
             if st.button("Open incident", key=item.artifact_id):
                 st.session_state["selected_incident_id"] = item.artifact_id
                 st.success("Incident selected. Open Evidence to inspect findings and cited events.")
@@ -153,45 +198,47 @@ def render_detail(settings: DashboardSettings) -> None:
         return
     try:
         incident = client(settings).incident(incident_id)
-        findings = client(settings).list_findings()
-        evidence = client(settings).list_evidence()
+        scoped = incident_evidence(incident, client(settings).job_artifacts(incident.job_id))
     except BackendClientError as error:
         st.error(str(error))
         return
     payload = incident.payload
     st.subheader(incident_summary(payload))
-    st.caption(f"Incident ID: {incident.artifact_id}")
+    st.caption(f"Incident ID: {incident.artifact_id} · Analysis job: {incident.job_id}")
     severity = str(payload.get("severity", "unknown"))
     st.write(f"Severity: {display_label(severity)}")
+    outcome = payload.get("analysis_outcome")
+    if isinstance(outcome, str):
+        getattr(st, outcome_tone(outcome))(f"Analysis outcome: {display_label(outcome)}")
     cards = st.columns(3)
     for card, name, identifier in zip(cards, ("Database", "VM", "Hypervisor"), ("database", "vm_guest_os", "host_hypervisor"), strict=True):
         card.metric(name, display_label(layer_state(payload, identifier)))
     uncertainty = payload.get("uncertainty")
     if isinstance(uncertainty, str) and uncertainty:
         st.warning(uncertainty)
-    render_report(settings, payload)
+    render_report(settings, payload, scoped.report)
     render_timeline_and_graph(payload)
     st.subheader("Findings")
-    if not findings.items:
-        st.info("No persisted findings are available for this incident.")
-    for finding in findings.items:
+    if not scoped.findings:
+        st.info("No specialist findings were persisted for this incident.")
+    for finding in scoped.findings:
         with st.expander(incident_summary(finding.payload)):
             st.json(finding.payload, expanded=False)
     st.subheader("Evidence and provenance")
-    if not evidence.items:
+    if not scoped.events:
         st.info("No persisted evidence is available for this incident.")
-    for event in evidence.items:
+    for event in scoped.events:
         with st.expander(str(event.payload.get("event_id", event.artifact_id))):
             st.json(event.payload, expanded=False)
 
 
-def render_report(settings: DashboardSettings, incident: dict[str, object]) -> None:
-    report_id = incident.get("report_id")
+def render_report(settings: DashboardSettings, incident: dict[str, object], persisted: Artifact | None = None) -> None:
+    report_id = persisted.artifact_id if persisted else incident.get("report_id")
     if not isinstance(report_id, str):
-        st.info("No persisted RCA report is linked to this incident yet.")
+        st.info("No RCA report was generated for this incident; see the analysis outcome above.")
         return
     try:
-        report = client(settings).report(report_id).payload
+        report = persisted.payload if persisted else client(settings).report(report_id).payload
     except BackendClientError as error:
         st.error(str(error))
         return
@@ -200,14 +247,17 @@ def render_report(settings: DashboardSettings, incident: dict[str, object]) -> N
     if isinstance(root, str):
         st.warning(f"Probable root cause (hypothesis): {root}")
     confidence = report.get("confidence")
-    if confidence is not None:
+    if isinstance(confidence, dict):
+        st.caption(f"Model confidence: {confidence.get('level', 'unknown')} ({confidence.get('score', 'n/a')})")
+    elif confidence is not None:
         st.caption(f"Model confidence: {confidence}")
     if isinstance(report.get("uncertainty"), str):
         st.info(f"Uncertainty: {report['uncertainty']}")
     st.json(report, expanded=False)
     exported = json.dumps(report, indent=2, sort_keys=True, default=str)
     st.download_button("Download report JSON", exported, file_name=f"{report_id}.json", mime="application/json")
-    markdown = f"# RCA report\n\n## Probable root cause (hypothesis)\n\n{root or 'Not available'}\n\n## Evidence\n\n{exported}\n"
+    rendered = report.get("markdown")
+    markdown = rendered if isinstance(rendered, str) else f"# RCA report\n\n## Probable root cause (hypothesis)\n\n{root or 'Not available'}\n\n## Evidence\n\n{exported}\n"
     st.download_button("Download report Markdown", markdown, file_name=f"{report_id}.md", mime="text/markdown")
 
 
