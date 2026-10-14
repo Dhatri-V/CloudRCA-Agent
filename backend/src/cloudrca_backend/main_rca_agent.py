@@ -28,6 +28,7 @@ from .specialist_runtime import (
     _number,
     _repair_prompt,
     _required,
+    unwrap_code_fence,
 )
 
 
@@ -165,7 +166,7 @@ class MainRcaAgent:
                     response = session.complete(current, self._config.timeout_seconds)
                     session_id, usage = response.session_id, usage.plus(response.usage)
                     try:
-                        report = validate_main_rca_report(response.text, request, self._config)
+                        report = validate_main_rca_report(unwrap_code_fence(response.text), request, self._config)
                         break
                     except ValueError as exc:
                         if repairs >= self._config.max_repair_attempts:
