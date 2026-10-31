@@ -88,12 +88,38 @@ def load_main_rca_runtime_config(settings: Settings, environ: Mapping[str, str])
     return config
 
 
+def _compact_graph(graph: CorrelationGraph) -> dict[str, object]:
+    """Reference events by ID only; their full provenance appears once, in incident.source_events."""
+    return {
+        "incident_id": graph.incident_id,
+        "nodes": [item.model_dump(mode="json", exclude={"provenance", "schema_version"}) for item in graph.nodes],
+        "edges": [
+            {
+                **edge.model_dump(mode="json", exclude={"evidence", "schema_version"}),
+                "evidence_reference_ids": [reference.reference_id for reference in edge.evidence],
+            }
+            for edge in graph.edges
+        ],
+    }
+
+
+def _compact_workflow(workflow: SpecialistWorkflowResult) -> dict[str, object]:
+    """Execution outcomes only; evidence-bound specialist findings are already in incident.findings."""
+    return {
+        "status": workflow.status.value,
+        "executions": [
+            {"layer": item.layer.value, "specialist": item.specialist, "status": item.status.value, "error_code": item.error_code}
+            for item in workflow.executions
+        ],
+    }
+
+
 def build_main_rca_prompt(request: MainRcaRequest, prompt_version: str) -> str:
     """Build bounded, canonical context; correlation edges are candidates, not causes."""
     payload = {
         "incident": request.incident.model_dump(mode="json"),
-        "correlation_graph": request.graph.model_dump(mode="json"),
-        "specialist_workflow": request.workflow.model_dump(mode="json") if request.workflow else None,
+        "correlation_graph": _compact_graph(request.graph),
+        "specialist_workflow": _compact_workflow(request.workflow) if request.workflow else None,
         "knowledge": [
             {"chunk_id": item.chunk.chunk_id, "source": item.chunk.source, "section": item.chunk.section, "text": item.chunk.text}
             for item in request.knowledge
@@ -102,6 +128,7 @@ def build_main_rca_prompt(request: MainRcaRequest, prompt_version: str) -> str:
     return "\n".join((
         f"CLOUDRCA_MAIN_RCA_PROMPT_VERSION={prompt_version}",
         "Correlation edges are candidates only; make causal claims only when cited evidence supports them.",
+        "Event details and provenance are in incident.source_events; graph nodes and edges reference events by ID.",
         "Every evidence reference must use an ID from INPUT. Disclose partial specialist execution in uncertainty.",
         "Return exactly one JSON object validating against RCA_REPORT_SCHEMA.",
         f"RCA_REPORT_SCHEMA={json.dumps(RCAReport.model_json_schema(mode='validation'), sort_keys=True, separators=(',', ':'))}",
