@@ -287,7 +287,10 @@ class RcaPipeline:
         topology = incident_topology(events)
         try:
             result = agents.main_rca.analyze(
-                MainRcaRequest(incident=incident, graph=graph, workflow=workflow, topology=topology, correlation_id=trace_id)
+                MainRcaRequest(
+                    incident=incident, graph=graph, workflow=workflow, topology=topology,
+                    events=tuple(item.event for item in events), correlation_id=trace_id,
+                )
             )
             finding_references = tuple(
                 EvidenceReference(evidence_id=f"evidence-{item.finding_id}", kind=EvidenceKind.FINDING, reference_id=item.finding_id)
