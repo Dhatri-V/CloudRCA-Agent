@@ -11,7 +11,7 @@ python3.12 -m venv .venv
 cp .env.example .env
 ```
 
-The application reads settings from the process environment; it does not read `.env` itself. Export the settings in each terminal before starting the API, for example `set -a; source .env; set +a`. The API needs `CLOUDRCA_PROFILE`, `CLOUDRCA_DATA_DIR`, `CLOUDRCA_KNOWLEDGE_DIR`, `CLOUDRCA_JCODE_BINARY`, the Qwen specialist settings, and the GLM main-RCA settings (with the key in the variable named by `CLOUDRCA_GLM_API_KEY_ENV`) to analyze jobs; without them, jobs fail with a message naming the missing setting. The supported profiles are `development`, `test`, and `demo`. Do not commit `.env` or provider credentials.
+The application reads settings from the process environment; it does not read `.env` itself. Export the settings in each terminal before starting the API, for example `set -a; source .env; set +a`. The API needs `CLOUDRCA_PROFILE`, `CLOUDRCA_DATA_DIR`, `CLOUDRCA_KNOWLEDGE_DIR`, `CLOUDRCA_JCODE_BINARY`, the Qwen specialist settings, and the main-RCA settings `CLOUDRCA_GLM_*` (OpenRouter by default, with the key in the variable named by `CLOUDRCA_GLM_API_KEY_ENV`) to analyze jobs; without them, jobs fail with a message naming the missing setting. The supported profiles are `development`, `test`, and `demo`. Do not commit `.env` or provider credentials.
 
 ## Run locally
 
