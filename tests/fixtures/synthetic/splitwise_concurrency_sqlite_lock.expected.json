@@ -1,0 +1,12 @@
+{
+  "fixture": "splitwise_concurrency_sqlite_lock.jsonl",
+  "synthetic": true,
+  "scenario": "High concurrent application writes cause SQLite lock contention while VM resource metrics remain healthy.",
+  "expected_hypothesis": {
+    "layer": "application",
+    "component_id": "splitwise-api",
+    "summary": "Application write concurrency may be causing SQLite lock contention; healthy VM telemetry is contrary evidence for a VM-pressure explanation."
+  },
+  "not_real_world_accuracy_evidence": true,
+  "expected_structure": {"normalized_events": 4, "routed": {"application": 1, "database": 1, "vm_guest_os": 2}, "incidents": 1, "incident_layers": ["application", "database", "vm_guest_os"]}
+}

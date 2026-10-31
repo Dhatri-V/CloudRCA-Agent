@@ -25,7 +25,12 @@ from pathlib import Path
 from typing import Any
 
 ERROR_FIELDS = ("request_id", "route", "method", "status", "operation", "duration_ms", "db_wait_ms", "database_id")
-HEARTBEAT_FIELDS = ("load_1m", "load_5m", "cpu_count", "mem_available_mb", "mem_total_mb", "disk_free_mb", "disk_total_mb")
+# These names and meanings are emitted by splitwise-backend R6 (85629fc).
+HEARTBEAT_FIELDS = (
+    "load_1m", "load_5m", "cpu_count", "mem_available_mb", "mem_total_mb", "disk_free_mb", "disk_total_mb",
+    "db_pool_size", "db_pool_checked_out", "db_pool_overflow",
+)
+HEARTBEAT_COUNT_FIELDS = ("cpu_count", "db_pool_size", "db_pool_checked_out", "db_pool_overflow")
 MAX_MESSAGE = 2_000
 
 
@@ -163,8 +168,9 @@ def heartbeat_record(line: LogLine, report: Report) -> dict[str, Any] | None:
     if not isinstance(instance, str) or not instance or not measures:
         report.skipped["heartbeat_missing_required_fields"] += 1
         return None
-    if "cpu_count" in measures:
-        measures["cpu_count"] = int(measures["cpu_count"])
+    for measure in HEARTBEAT_COUNT_FIELDS:
+        if measure in measures:
+            measures[measure] = int(measures[measure])
     return {**_common(line, "host.heartbeat"), "instance_id": instance, **measures}
 
 

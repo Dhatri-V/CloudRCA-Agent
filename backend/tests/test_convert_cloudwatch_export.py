@@ -41,6 +41,18 @@ def test_output_is_accepted_by_the_normalizer(tmp_path: Path) -> None:
     assert batch.statistics.rejected == 0 and batch.statistics.accepted == 9
 
 
+def test_r6_heartbeat_pool_metrics_are_preserved_through_normalization(tmp_path: Path) -> None:
+    records = full(tmp_path)
+    heartbeats = of(records, "host.heartbeat")
+    assert [
+        (item["db_pool_size"], item["db_pool_checked_out"], item["db_pool_overflow"])
+        for item in heartbeats
+    ] == [(5, 1, 0), (5, 5, 2)]
+    events = {event.provenance.record_id: event for event in normalize_file(tmp_path / "converted.jsonl").events}
+    attributes = events["app_log.jsonl:4"].metadata["source_attributes"]
+    assert attributes["db_pool_size"] == 5 and attributes["db_pool_checked_out"] == 5 and attributes["db_pool_overflow"] == 2  # type: ignore[index]
+
+
 def test_every_valid_error_is_kept_one_to_one_with_its_identifiers(tmp_path: Path) -> None:
     errors = of(full(tmp_path), "app.error")
     assert [(item["reported_by"], item["request_id"], item["error_class"]) for item in errors] == [

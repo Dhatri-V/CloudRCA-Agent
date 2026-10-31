@@ -92,7 +92,10 @@ class ErrorEvent(_Record):
         return self
 
 
-HEARTBEAT_MEASURES = ("load_1m", "load_5m", "cpu_count", "mem_available_mb", "mem_total_mb", "disk_free_mb", "disk_total_mb")
+HEARTBEAT_MEASURES = (
+    "load_1m", "load_5m", "cpu_count", "mem_available_mb", "mem_total_mb", "disk_free_mb", "disk_total_mb",
+    "db_pool_size", "db_pool_checked_out", "db_pool_overflow",
+)
 
 
 class Heartbeat(_Record):
@@ -107,6 +110,9 @@ class Heartbeat(_Record):
     mem_total_mb: Measure | None = None
     disk_free_mb: Measure | None = None
     disk_total_mb: Measure | None = None
+    db_pool_size: Count | None = None
+    db_pool_checked_out: Count | None = None
+    db_pool_overflow: Count | None = None
 
     @model_validator(mode="after")
     def needs_a_measurement(self) -> Heartbeat:

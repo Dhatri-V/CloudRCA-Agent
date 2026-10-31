@@ -55,6 +55,7 @@ def test_prompt_states_the_cross_layer_reasoning_rules() -> None:
         "do not prove causation",
         "name the missing telemetry",
         "Never claim evidence for layers listed in telemetry_coverage.unavailable",
+        "must cite at least one actual event ID from INPUT.events",
         "alternative_hypotheses and uncertainty are required",
     ):
         assert phrase in prompt
@@ -114,6 +115,31 @@ def test_cross_layer_report_with_alternatives_and_uncertainty_is_accepted() -> N
     request = request_for(SPLITWISE)
     report = validate_main_rca_report(scripted_report(request, alternatives=True, uncertainty=True), request, CONFIG)
     assert report.root_cause_layer.value == "vm_guest_os" and report.alternative_hypotheses[0].layer.value == "application"
+
+
+def test_report_and_each_causal_edge_need_event_evidence_not_only_topology() -> None:
+    request = request_for(SPLITWISE)
+    report = json.loads(scripted_report(request, alternatives=True, uncertainty=True))
+    topology_id = request.topology.relationships[0].relationship_id
+    topology = [{"evidence_id": "topology-only", "kind": "topology", "reference_id": topology_id}]
+    report["evidence"] = topology
+    report["causal_chain"][0]["evidence"] = topology
+    with pytest.raises(MainRcaValidationError) as error:
+        validate_main_rca_report(json.dumps(report), request, CONFIG)
+    assert error.value.issues == (
+        {"type": "missing_event_evidence", "loc": "evidence"},
+        {"type": "missing_event_evidence", "loc": "causal_chain.0.evidence"},
+    )
+
+
+def test_metric_event_references_satisfy_direct_event_evidence_requirements() -> None:
+    request = request_for(SPLITWISE)
+    report = json.loads(scripted_report(request, alternatives=True, uncertainty=True))
+    event_id = request.incident.source_events[0].reference_id
+    metric = [{"evidence_id": "metric-event", "kind": "metric", "reference_id": event_id}]
+    report["evidence"] = metric
+    report["causal_chain"][0]["evidence"] = metric
+    assert validate_main_rca_report(json.dumps(report), request, CONFIG).evidence[0].kind.value == "metric"
 
 
 def test_single_layer_incidents_keep_the_previous_contract() -> None:

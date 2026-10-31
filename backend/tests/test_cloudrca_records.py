@@ -67,6 +67,10 @@ def test_timestamps_identifiers_and_provenance_are_preserved() -> None:
     assert metric.vm_id == "i-0synthetic01"
     assert metric.metadata["source_attributes"]["dimensions"] == {"InstanceId": "i-0synthetic01"}  # type: ignore[index]
     assert metric.message == "AWS/EC2 CPUUtilization Average=34 Percent (period 60s)"
+    heartbeat_attributes = events["hb-1000"].metadata["source_attributes"]
+    assert {key: heartbeat_attributes[key] for key in ("db_pool_size", "db_pool_checked_out", "db_pool_overflow")} == {  # type: ignore[index]
+        "db_pool_size": 5, "db_pool_checked_out": 5, "db_pool_overflow": 2,
+    }
     application_error = events["err-1001-b"]
     assert application_error.service == "splitwise-api" and application_error.metadata["source_attributes"]["request_id"] == "req-0023"  # type: ignore[index]
 
@@ -113,8 +117,9 @@ def test_invalid_error_records_are_rejected_with_explicit_reasons(change: dict[s
         (0, {"value": True}, RejectionReason.SCHEMA_VALIDATION_FAILED),
         (2, {"request_count": False}, RejectionReason.SCHEMA_VALIDATION_FAILED),
         (0, {"metric_name": None}, RejectionReason.MISSING_REQUIRED_FIELD),
-        (1, {key: None for key in ("load_1m", "cpu_count", "mem_available_mb", "mem_total_mb", "disk_free_mb", "disk_total_mb")}, RejectionReason.SCHEMA_VALIDATION_FAILED),
+        (1, {key: None for key in ("load_1m", "cpu_count", "mem_available_mb", "mem_total_mb", "disk_free_mb", "disk_total_mb", "db_pool_size", "db_pool_checked_out", "db_pool_overflow")}, RejectionReason.SCHEMA_VALIDATION_FAILED),
         (1, {"mem_available_mb": -5}, RejectionReason.SCHEMA_VALIDATION_FAILED),
+        (1, {"db_pool_overflow": -1}, RejectionReason.SCHEMA_VALIDATION_FAILED),
         (2, {"error_5xx_count": 99}, RejectionReason.SCHEMA_VALIDATION_FAILED),
         (2, {"request_count": -1}, RejectionReason.SCHEMA_VALIDATION_FAILED),
     ],
