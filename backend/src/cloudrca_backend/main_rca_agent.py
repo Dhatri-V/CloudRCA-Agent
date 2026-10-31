@@ -11,7 +11,7 @@ from uuid import uuid4
 import structlog
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .contracts import Layer, ModelRuntimeProvenance, RCAReport
+from .contracts import Layer, ModelRuntimeProvenance, NormalizedEvent, RCAReport
 from .correlation import CorrelationGraph
 from .incident_grouping import CandidateIncident
 from .knowledge import RetrievedChunk
@@ -42,6 +42,7 @@ class MainRcaRequest(BaseModel):
     workflow: SpecialistWorkflowResult | None = None
     knowledge: tuple[RetrievedChunk, ...] = ()
     topology: TopologyResolution = Field(default_factory=TopologyResolution)
+    events: tuple[NormalizedEvent, ...] = ()
     correlation_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
@@ -116,19 +117,64 @@ def load_main_rca_runtime_config(settings: Settings, environ: Mapping[str, str])
     return config
 
 
+def _event_ref(node_id: str) -> str:
+    return node_id.removeprefix("event:")
+
+
 def _compact_graph(graph: CorrelationGraph) -> dict[str, object]:
-    """Reference events by ID only; their full provenance appears once, in incident.source_events."""
+    """Candidate edges between event IDs; each edge's evidence is exactly its two endpoint events."""
     return {
         "incident_id": graph.incident_id,
-        "nodes": [item.model_dump(mode="json", exclude={"provenance", "schema_version"}) for item in graph.nodes],
+        "nodes": [item.model_dump(mode="json", exclude={"provenance", "schema_version", "node_id"}) for item in graph.nodes],
         "edges": [
             {
-                **edge.model_dump(mode="json", exclude={"evidence", "schema_version"}),
-                "evidence_reference_ids": [reference.reference_id for reference in edge.evidence],
+                "source": _event_ref(edge.source_id),
+                "target": _event_ref(edge.target_id),
+                "type": edge.edge_type.value,
+                "score": round(edge.score, 3),
+                "basis": edge.rationale[-1],
+                **({"topology_relationship_ids": list(edge.topology_relationship_ids)} if edge.topology_relationship_ids else {}),
             }
             for edge in graph.edges
         ],
     }
+
+
+def _compact_event(event: NormalizedEvent) -> dict[str, object]:
+    """One event's facts once: identifiers, message, timing, and provenance, without the raw source record."""
+    ids = {name: getattr(event, name) for name in ("service", "host_id", "vm_id", "pod_id", "database_id") if getattr(event, name)}
+    return {
+        "event_id": event.event_id,
+        "timestamp": event.timestamp.isoformat().replace("+00:00", "Z"),
+        "layer": event.layer.value,
+        "severity": event.severity.value,
+        "source": event.source,
+        "message": event.message,
+        **ids,
+        "record_kind": event.metadata.get("record_kind"),
+        "source_attributes": event.metadata.get("source_attributes") or {},
+        "provenance": {"kind": event.provenance.kind.value, "source": event.provenance.source, "record_id": event.provenance.record_id},
+    }
+
+
+def _compact_incident(request: MainRcaRequest) -> dict[str, object]:
+    """With events supplied, source events become ID references and event facts appear once in ``events``."""
+    incident = request.incident.model_dump(mode="json")
+    # Pairwise grouping rationales repeat the correlation edges; keep why the incident was grouped, per reason.
+    pairs: dict[str, int] = {}
+    topology_ids: dict[str, set[str]] = {}
+    for rationale in request.incident.rationales:
+        pairs[rationale.reason.value] = pairs.get(rationale.reason.value, 0) + 1
+        topology_ids.setdefault(rationale.reason.value, set()).update(rationale.topology_relationship_ids)
+    incident["rationales"] = [
+        {"reason": reason, "event_pairs": count, "topology_relationship_ids": sorted(topology_ids[reason])}
+        for reason, count in pairs.items()
+    ]
+    if request.events:
+        incident["source_events"] = [
+            {"evidence_id": item.evidence_id, "kind": item.kind.value, "reference_id": item.reference_id} for item in request.incident.source_events
+        ]
+    return incident
 
 
 def _compact_topology(topology: TopologyResolution) -> dict[str, object]:
@@ -210,7 +256,8 @@ def telemetry_coverage(request: MainRcaRequest) -> dict[str, object]:
 def build_main_rca_prompt(request: MainRcaRequest, prompt_version: str) -> str:
     """Build bounded, canonical context; correlation edges are candidates, not causes."""
     payload = {
-        "incident": request.incident.model_dump(mode="json"),
+        "incident": _compact_incident(request),
+        "events": [_compact_event(item) for item in sorted(request.events, key=lambda item: (item.timestamp, item.event_id))],
         "correlation_graph": _compact_graph(request.graph),
         "specialist_workflow": _compact_workflow(request.workflow) if request.workflow else None,
         "topology": _compact_topology(request.topology),
@@ -223,7 +270,8 @@ def build_main_rca_prompt(request: MainRcaRequest, prompt_version: str) -> str:
     return "\n".join((
         f"CLOUDRCA_MAIN_RCA_PROMPT_VERSION={prompt_version}",
         "Correlation edges are candidates only; make causal claims only when cited evidence supports them.",
-        "Event details and provenance are in incident.source_events; graph nodes and edges reference events by ID.",
+        "Event details are in events (or incident.source_events provenance when events is empty); incident, graph "
+        "nodes, edges, and topology reference events by ID.",
         "topology lists observed structure (what runs on or depends on what) with its supporting evidence; it is not "
         "evidence that one component caused another's failure. topology.unavailable lists relationships that cannot be observed.",
         *REASONING_RULES,
