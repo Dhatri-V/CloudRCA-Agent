@@ -1,0 +1,21 @@
+{
+  "fixture": "redis_vm_cpu_incident.jsonl",
+  "synthetic": true,
+  "scenario": "Guest CPU on vm-worker-08 saturates (41% -> 98%) from 10:00 UTC; redis-cart-0, which runs on that VM, then logs slow commands, client timeouts, and refused connections from 10:02 UTC.",
+  "expected_root_cause": {
+    "layer": "vm_guest_os",
+    "component_id": "vm-worker-08",
+    "summary": "CPU saturation on VM vm-worker-08 starved the Redis pod running on it."
+  },
+  "expected_symptom": {
+    "layer": "database",
+    "component_id": "redis-cart-0",
+    "summary": "Redis latency, client timeouts, and refused connections."
+  },
+  "expected_structure": {
+    "normalized_events": 8,
+    "routed": {"database": 4, "vm_guest_os": 4},
+    "incidents": 1,
+    "incident_layers": ["database", "vm_guest_os"]
+  }
+}
