@@ -11,7 +11,7 @@ from uuid import uuid4
 import structlog
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .contracts import ModelRuntimeProvenance, RCAReport
+from .contracts import Layer, ModelRuntimeProvenance, RCAReport
 from .correlation import CorrelationGraph
 from .incident_grouping import CandidateIncident
 from .knowledge import RetrievedChunk
@@ -107,7 +107,7 @@ def load_main_rca_runtime_config(settings: Settings, environ: Mapping[str, str])
             max_events=_integer(environ, "CLOUDRCA_MAIN_RCA_MAX_EVENTS", 100),
             max_prompt_characters=_integer(environ, "CLOUDRCA_MAIN_RCA_MAX_PROMPT_CHARACTERS", 50_000),
             max_repair_attempts=_integer(environ, "CLOUDRCA_MAIN_RCA_MAX_REPAIR_ATTEMPTS", 1),
-            prompt_version=environ.get("CLOUDRCA_MAIN_RCA_PROMPT_VERSION", "main-rca-v1").strip(),
+            prompt_version=environ.get("CLOUDRCA_MAIN_RCA_PROMPT_VERSION", "main-rca-v2").strip(),
         )
     except ValidationError as exc:
         raise SettingsError(f"Invalid main RCA configuration: {exc}") from exc
@@ -169,6 +169,44 @@ def _excerpt(text: str, limit: int = REPAIR_EXCERPT_CHARACTERS) -> str:
     return text if len(text) <= limit else f"{text[:limit]}... [truncated {len(text) - limit} characters]"
 
 
+SPECIALIST_FOR_LAYER = {Layer.DATABASE: "A1", Layer.VM: "A2", Layer.HYPERVISOR: "A3"}
+REASONING_RULES = (
+    "Cross-layer reasoning rules:",
+    "1. Separate the component that REPORTED each error (where it was logged or measured) from the component most "
+    "likely RESPONSIBLE for it. Never attribute a failure to the reporting layer by default; for example a database "
+    "error may be caused by application behaviour (concurrent writes, long transactions) or by VM/OS resource pressure.",
+    "2. Weigh application, database, VM/OS, and infrastructure explanations. For each candidate cite supporting and "
+    "contradicting evidence; put non-selected candidates in alternative_hypotheses.",
+    "3. Temporal overlap and topology do not prove causation. Every causal_chain edge needs evidence that the cause "
+    "preceded and plausibly produced the effect (for example slower database operations during resource pressure).",
+    "4. If the evidence cannot distinguish the candidates, say so in uncertainty, lower confidence, and name the "
+    "missing telemetry that would distinguish them.",
+    "5. Never claim evidence for layers listed in telemetry_coverage.unavailable or with no events.",
+)
+
+
+def telemetry_coverage(request: MainRcaRequest) -> dict[str, object]:
+    """Which layers have evidence and specialist analysis, and which cannot be observed at all."""
+    counts: dict[str, int] = {layer.value: 0 for layer in Layer}
+    for node in request.graph.nodes:
+        counts[node.layer.value] += 1
+    executions = {item.layer: item for item in request.workflow.executions} if request.workflow else {}
+    layers: dict[str, object] = {}
+    for layer in Layer:
+        present = layer in request.incident.affected_layers
+        execution = executions.get(layer)
+        layers[layer.value] = {
+            "has_evidence": present,
+            "event_count": counts[layer.value] if request.graph.nodes else None,
+            "specialist": SPECIALIST_FOR_LAYER.get(layer, "none (evidence only)"),
+            "specialist_status": execution.status.value if execution else "not_run",
+        }
+    unavailable = sorted(
+        {f"{item.source.kind.value} {item.source.component_id} -> {item.target_kind.value}: {item.reason}" for item in request.topology.unavailable}
+    )
+    return {"layers": layers, "unavailable": unavailable}
+
+
 def build_main_rca_prompt(request: MainRcaRequest, prompt_version: str) -> str:
     """Build bounded, canonical context; correlation edges are candidates, not causes."""
     payload = {
@@ -176,6 +214,7 @@ def build_main_rca_prompt(request: MainRcaRequest, prompt_version: str) -> str:
         "correlation_graph": _compact_graph(request.graph),
         "specialist_workflow": _compact_workflow(request.workflow) if request.workflow else None,
         "topology": _compact_topology(request.topology),
+        "telemetry_coverage": telemetry_coverage(request),
         "knowledge": [
             {"chunk_id": item.chunk.chunk_id, "source": item.chunk.source, "section": item.chunk.section, "text": item.chunk.text}
             for item in request.knowledge
@@ -187,7 +226,9 @@ def build_main_rca_prompt(request: MainRcaRequest, prompt_version: str) -> str:
         "Event details and provenance are in incident.source_events; graph nodes and edges reference events by ID.",
         "topology lists observed structure (what runs on or depends on what) with its supporting evidence; it is not "
         "evidence that one component caused another's failure. topology.unavailable lists relationships that cannot be observed.",
+        *REASONING_RULES,
         "Every evidence reference must use an ID from INPUT. Disclose partial specialist execution in uncertainty.",
+        "When the incident spans more than one layer, alternative_hypotheses and uncertainty are required.",
         "Return exactly one JSON object validating against RCA_REPORT_SCHEMA.",
         f"RCA_REPORT_SCHEMA={json.dumps(RCAReport.model_json_schema(mode='validation'), sort_keys=True, separators=(',', ':'))}",
         f"INPUT={json.dumps(payload, sort_keys=True, separators=(',', ':'))}",
@@ -246,6 +287,17 @@ def validate_main_rca_report(raw: str, request: MainRcaRequest, config: Speciali
         raise MainRcaValidationError(
             "partial specialist execution requires explicit uncertainty", (_issue("missing_uncertainty", "uncertainty"),)
         )
+    if len(request.incident.affected_layers) > 1:
+        # Cross-layer incidents must show the competing explanations and what remains uncertain.
+        gaps: list[dict[str, str]] = []
+        if not report.alternative_hypotheses:
+            gaps.append(_issue("missing_alternative_hypotheses", "alternative_hypotheses"))
+        if not report.uncertainty:
+            gaps.append(_issue("missing_uncertainty", "uncertainty"))
+        if gaps:
+            raise MainRcaValidationError(
+                "cross-layer incidents require alternative hypotheses and explicit uncertainty", tuple(gaps)
+            )
     return report.model_copy(
         update={
             "runtime": ModelRuntimeProvenance(

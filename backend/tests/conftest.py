@@ -91,6 +91,15 @@ def _report(payload: dict[str, Any]) -> dict[str, Any]:
             }
         ],
         "evidence": evidence,
+        "alternative_hypotheses": [
+            {
+                "summary": "An alternative layer may be responsible (scripted test response)",
+                "layer": next((item["layer"] for item in incident["affected_components"] if item["layer"] != component["layer"]), component["layer"]),
+                "component": None,
+                "confidence": {"score": 0.2, "level": "low"},
+                "evidence": evidence[:1],
+            }
+        ],
         "confidence": {"score": 0.4, "level": "low"},
         "uncertainty": "Scripted test response; evidence is limited to the supplied fixture events.",
         "runtime": {"provider": "placeholder", "model": "placeholder", "harness": "placeholder"},
