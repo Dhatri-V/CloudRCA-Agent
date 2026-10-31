@@ -7,12 +7,24 @@ from enum import StrEnum
 
 from pydantic import Field, ValidationError, model_validator
 
-from .contracts import ComponentRef, Confidence, ContractModel, Identifier, Layer, NonEmptyText, Severity, TimeWindow
+from .contracts import (
+    ComponentKind,
+    ComponentRef,
+    Confidence,
+    ConfidenceLevel,
+    ContractModel,
+    Identifier,
+    Layer,
+    NonEmptyText,
+    Severity,
+    TimeWindow,
+)
 from .routing import RoutedEvent, RoutingLayer
 from .specialist_runtime import (
     SpecialistRequest,
     SpecialistRuntime,
     SpecialistStructuredRunResult,
+    finding_contract_lines,
     specialist_event_context,
 )
 
@@ -71,6 +83,23 @@ class DatabaseAnalysis(ContractModel):
     findings: tuple[DatabaseFinding, ...] = ()
 
 
+EXAMPLE_DATABASE_FINDING = DatabaseFinding(
+    error_type=DatabaseErrorType.CONNECTION,
+    severity=Severity.ERROR,
+    component=ComponentRef(component_id="database-id-from-input", kind=ComponentKind.DATABASE, layer=Layer.DATABASE),
+    symptoms=("client connection timeouts",),
+    observations=(DatabaseObservation(statement="Clients timed out connecting.", evidence_event_ids=("event-id-from-input",)),),
+    hypotheses=(
+        DatabaseHypothesis(
+            statement="The database may have been unable to serve clients.",
+            evidence_event_ids=("event-id-from-input",),
+            confidence=Confidence(score=0.5, level=ConfidenceLevel.MEDIUM),
+        ),
+    ),
+    confidence=Confidence(score=0.6, level=ConfidenceLevel.MEDIUM),
+)
+
+
 class DatabaseAgentInputError(ValueError):
     """Raised before Qwen is called for input outside A1's database boundary."""
 
@@ -92,6 +121,7 @@ def build_database_prompt(request: SpecialistRequest, prompt_version: str) -> st
         "Hypotheses must use type=hypothesis. If evidence conflicts, "
         "record the conflict as an observation and lower confidence or return no finding; do not resolve it by invention.",
         "If no supported database anomaly exists, return {\"findings\": []} exactly.",
+        *finding_contract_lines(DatabaseFinding, EXAMPLE_DATABASE_FINDING),
         "Return exactly one JSON object that validates against DATABASE_ANALYSIS_SCHEMA.",
         f"DATABASE_ANALYSIS_SCHEMA={json.dumps(DatabaseAnalysis.model_json_schema(mode='validation'), sort_keys=True, separators=(',', ':'))}",
         f"INPUT={json.dumps(payload, sort_keys=True, separators=(',', ':'))}",

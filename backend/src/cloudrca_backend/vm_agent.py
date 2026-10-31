@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from enum import StrEnum
 
 from pydantic import Field, ValidationError, model_validator
@@ -11,6 +12,7 @@ from .contracts import (
     ComponentKind,
     ComponentRef,
     Confidence,
+    ConfidenceLevel,
     ContractModel,
     Identifier,
     Layer,
@@ -23,6 +25,7 @@ from .specialist_runtime import (
     SpecialistRequest,
     SpecialistRuntime,
     SpecialistStructuredRunResult,
+    finding_contract_lines,
     specialist_event_context,
 )
 
@@ -117,6 +120,26 @@ class VMAnalysis(ContractModel):
     findings: tuple[VMFinding, ...] = ()
 
 
+_EXAMPLE_START, _EXAMPLE_END = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc), datetime(2026, 1, 1, 10, 3, tzinfo=timezone.utc)
+EXAMPLE_VM_FINDING = VMFinding(
+    error_type=VMErrorType.CPU,
+    severity=Severity.CRITICAL,
+    component=ComponentRef(component_id="vm-id-from-input", kind=ComponentKind.VM, layer=Layer.VM),
+    time_range=TimeWindow(start=_EXAMPLE_START, end=_EXAMPLE_END),
+    symptoms=(VMSymptom(category=VMErrorType.CPU, statement="CPU usage stayed above 95%.", evidence_event_ids=("event-id-from-input",)),),
+    observations=(VMObservation(category=VMErrorType.CPU, statement="CPU usage rose sharply.", evidence_event_ids=("event-id-from-input",)),),
+    hypotheses=(
+        VMHypothesis(
+            category=VMErrorType.CPU,
+            statement="Guest CPU saturation may have starved workloads on this VM.",
+            evidence_event_ids=("event-id-from-input",),
+            confidence=Confidence(score=0.6, level=ConfidenceLevel.MEDIUM),
+        ),
+    ),
+    confidence=Confidence(score=0.7, level=ConfidenceLevel.MEDIUM),
+)
+
+
 class VMAgentInputError(ValueError):
     """Raised before Qwen is called for input outside A2's VM boundary."""
 
@@ -138,6 +161,7 @@ def build_vm_prompt(request: SpecialistRequest, prompt_version: str) -> str:
         "Hypotheses must use type=hypothesis. Preserve a cited VM ID when one is available. "
         "If evidence conflicts, set evidence_state=contradictory, cite both contradiction_event_ids, and use confidence at or below 0.5.",
         "If no supported VM anomaly exists, return {\"findings\": []} exactly.",
+        *finding_contract_lines(VMFinding, EXAMPLE_VM_FINDING),
         "Return exactly one JSON object that validates against VM_ANALYSIS_SCHEMA.",
         f"VM_ANALYSIS_SCHEMA={json.dumps(VMAnalysis.model_json_schema(mode='validation'), sort_keys=True, separators=(',', ':'))}",
         f"INPUT={json.dumps(payload, sort_keys=True, separators=(',', ':'))}",

@@ -244,6 +244,30 @@ def specialist_event_context(routed: RoutedEvent) -> dict[str, Any]:
     }
 
 
+def _without_schema_version(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _without_schema_version(item) for key, item in value.items() if key != "schema_version"}
+    if isinstance(value, list):
+        return [_without_schema_version(item) for item in value]
+    return value
+
+
+def finding_contract_lines(finding_model: type[BaseModel], example: BaseModel) -> tuple[str, str]:
+    """Name a specialist's required finding fields and show one schema-valid example finding.
+
+    Small local models lose required fields (e.g. ``severity``) inside a long JSON Schema, so they are stated
+    explicitly. The required list is derived from the model, so it cannot drift from the schema.
+    """
+    required = [name for name, field in finding_model.model_fields.items() if field.is_required()]
+    sample = _without_schema_version({"findings": [example.model_dump(mode="json")]})
+    return (
+        f"REQUIRED_FINDING_FIELDS={','.join(required)}. Every finding must include every one of these fields, "
+        "spelled exactly as written; nested items need their own fields as shown in EXAMPLE_OUTPUT.",
+        "EXAMPLE_OUTPUT (structure only: every ID, timestamp, component, and statement must come from INPUT; "
+        f"never copy example values)={json.dumps(sample, sort_keys=True, separators=(',', ':'))}",
+    )
+
+
 def build_specialist_prompt(request: SpecialistRequest, prompt_version: str) -> str:
     """Build a stable prompt without including raw source records or secrets."""
     payload = {
