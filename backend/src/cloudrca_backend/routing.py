@@ -34,6 +34,7 @@ class RoutingLayer(StrEnum):
     DATABASE = "database"
     VM = "vm_guest_os"
     HYPERVISOR = "host_hypervisor"
+    APPLICATION = "application"
     UNKNOWN = "unknown"
     AMBIGUOUS = "ambiguous"
 
@@ -68,7 +69,7 @@ class RoutingConfig(BaseModel):
     @model_validator(mode="after")
     def all_layers_must_be_configured(self) -> RoutingConfig:
         if set(self.layers) != set(Layer):
-            raise ValueError("routing configuration must define database, vm_guest_os, and host_hypervisor")
+            raise ValueError("routing configuration must define database, vm_guest_os, host_hypervisor, and application")
         return self
 
 
@@ -195,6 +196,20 @@ def _identifier_matches(event: NormalizedEvent, config: RoutingConfig) -> list[R
                 field="host_id",
                 value=event.host_id,
                 rule="host identifier present",
+                precedence=300,
+                confidence=config.confidence.exact_identifier,
+            )
+        )
+        return matches
+    if event.layer is Layer.APPLICATION:
+        # Application evidence (e.g. HTTP request outcomes) often carries the VM it ran on; that context must not
+        # send it to the VM specialist. Database and host identifiers above keep precedence.
+        matches.append(
+            RoutingMatch(
+                layer=Layer.APPLICATION,
+                field="layer",
+                value=event.layer.value,
+                rule="normalizer-declared application event",
                 precedence=300,
                 confidence=config.confidence.exact_identifier,
             )

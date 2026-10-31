@@ -34,3 +34,7 @@ layers:
       - physical-host
     fallback_patterns:
       - "\\b(hypervisor failure|virtualization host)\\b"
+  # Evidence-only layer: populated by normalizer-declared application events, never by AIOps2025 aliases.
+  application:
+    aliases: []
+    fallback_patterns: []

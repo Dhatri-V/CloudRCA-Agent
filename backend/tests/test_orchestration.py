@@ -8,6 +8,7 @@ from typing import cast
 import pytest
 from cloudrca_backend.contracts import Layer, NormalizedEvent, Provenance
 from cloudrca_backend.orchestration import (
+    LAYER_ORDER,
     AnalysisBatch,
     OrchestrationInputError,
     SpecialistOrchestrator,
@@ -116,7 +117,8 @@ def test_three_agent_run_partitions_events_and_preserves_identifiers() -> None:
     assert all(agent.calls[0][1] == "trace-1" for agent in configured.values())
 
 
-@pytest.mark.parametrize("layer", list(Layer))
+# A1/A2/A3 layers only: application is an evidence-only layer with no specialist.
+@pytest.mark.parametrize("layer", LAYER_ORDER)
 def test_single_layer_runs_only_its_specialist(layer: Layer) -> None:
     orchestrator, configured = agents()
     result = orchestrator.run(batch(routed("event-1", layer)))

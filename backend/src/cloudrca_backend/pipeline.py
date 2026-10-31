@@ -37,7 +37,8 @@ from .settings import SettingsError, load_settings
 from .specialist_runtime import JCodeCliTransport, SpecialistRuntime, load_specialist_runtime_config
 from .vm_agent import VMAgent
 
-DEFINITIVE_LAYERS = frozenset({RoutingLayer.DATABASE, RoutingLayer.VM, RoutingLayer.HYPERVISOR})
+SPECIALIST_LAYERS = frozenset({RoutingLayer.DATABASE, RoutingLayer.VM, RoutingLayer.HYPERVISOR})
+DEFINITIVE_LAYERS = SPECIALIST_LAYERS | {RoutingLayer.APPLICATION}
 SEVERITY_ORDER = tuple(Severity)
 
 DatasetLoader = Callable[[str], tuple[str, bytes] | None]
@@ -214,22 +215,30 @@ class RcaPipeline:
     def _analyze(
         self, incident: CandidateIncident, events: tuple[RoutedEvent, ...], agents: AnalysisAgents, dataset_id: str
     ) -> IncidentAnalysis:
-        batch = AnalysisBatch(
-            run_id=str(uuid4()), session_id=dataset_id, incident_id=incident.incident_id, trace_id=str(uuid4()), events=events
-        )
-        workflow = SpecialistOrchestrator(agents.specialists).run(batch)
-        incident = self._grouper.attach_findings(incident, workflow)
+        trace_id = str(uuid4())
+        # A1/A2/A3 receive only their own layers; application evidence has no specialist (A4 is not approved) but
+        # always stays in the incident, so the main RCA can weigh it.
+        specialist_events = tuple(item for item in events if item.routing.layer in SPECIALIST_LAYERS)
+        application_events = tuple(item for item in events if item.routing.layer is RoutingLayer.APPLICATION)
+        workflow: SpecialistWorkflowResult | None = None
+        if specialist_events:
+            batch = AnalysisBatch(
+                run_id=str(uuid4()), session_id=dataset_id, incident_id=incident.incident_id, trace_id=trace_id,
+                events=specialist_events,
+            )
+            workflow = SpecialistOrchestrator(agents.specialists).run(batch)
+            incident = self._grouper.attach_findings(incident, workflow)
         graph = self._correlator.correlate(incident, events)
         failed_codes = sorted(
             {(item.error_code.value if item.error_code else item.status.value) for item in workflow.executions if item.status is not SpecialistStatus.SUCCESS}
-        )
-        if workflow.status in {WorkflowStatus.FAILED, WorkflowStatus.CANCELLED}:
+        ) if workflow else []
+        if workflow and workflow.status in {WorkflowStatus.FAILED, WorkflowStatus.CANCELLED} and not application_events:
             return IncidentAnalysis(
                 incident, events, IncidentOutcome.SPECIALIST_FAILED,
                 f"Analysis incomplete: specialist analysis failed ({', '.join(failed_codes)}).", workflow, graph,
             )
-        if not incident.findings:
-            if workflow.status is WorkflowStatus.PARTIAL:
+        if not incident.findings and not application_events:
+            if workflow and workflow.status is WorkflowStatus.PARTIAL:
                 return IncidentAnalysis(
                     incident, events, IncidentOutcome.SPECIALIST_FAILED,
                     f"Analysis incomplete: no findings and some specialists failed ({', '.join(failed_codes)}).", workflow, graph,
@@ -243,7 +252,7 @@ class RcaPipeline:
             )
         try:
             result = agents.main_rca.analyze(
-                MainRcaRequest(incident=incident, graph=graph, workflow=workflow, correlation_id=batch.trace_id)
+                MainRcaRequest(incident=incident, graph=graph, workflow=workflow, correlation_id=trace_id)
             )
             finding_references = tuple(
                 EvidenceReference(evidence_id=f"evidence-{item.finding_id}", kind=EvidenceKind.FINDING, reference_id=item.finding_id)
@@ -263,7 +272,7 @@ class RcaPipeline:
                 "Analysis incomplete: the RCA report failed evidence integrity validation.", workflow, graph,
             )
         explanation = str(result.report.uncertainty or "")
-        if workflow.status is WorkflowStatus.PARTIAL and not explanation:
+        if workflow and workflow.status is not WorkflowStatus.SUCCESS and not explanation:
             explanation = f"Some specialists failed ({', '.join(failed_codes)})."
         return IncidentAnalysis(incident, events, IncidentOutcome.REPORTED, explanation, workflow, graph, report)
 
