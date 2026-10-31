@@ -16,6 +16,7 @@ from .correlation import CorrelationGraph
 from .incident_grouping import CandidateIncident
 from .knowledge import RetrievedChunk
 from .orchestration import SpecialistWorkflowResult, WorkflowStatus
+from .routing import TopologyResolution
 from .settings import Settings, SettingsError
 from .specialist_runtime import (
     EventLogger,
@@ -40,6 +41,7 @@ class MainRcaRequest(BaseModel):
     graph: CorrelationGraph
     workflow: SpecialistWorkflowResult | None = None
     knowledge: tuple[RetrievedChunk, ...] = ()
+    topology: TopologyResolution = Field(default_factory=TopologyResolution)
     correlation_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
@@ -129,6 +131,28 @@ def _compact_graph(graph: CorrelationGraph) -> dict[str, object]:
     }
 
 
+def _compact_topology(topology: TopologyResolution) -> dict[str, object]:
+    """Observed structure with its evidence IDs, plus explicitly unavailable relationships."""
+    component = lambda item: {"component_id": item.component_id, "kind": item.kind.value, "layer": item.layer.value}  # noqa: E731
+    return {
+        "relationships": [
+            {
+                "relationship_id": item.relationship_id,
+                "relationship_type": item.relationship_type.value,
+                "source": component(item.source),
+                "target": component(item.target),
+                "provenance_kind": item.provenance.kind.value,
+                "evidence_reference_ids": [reference.reference_id for reference in item.evidence],
+            }
+            for item in topology.relationships
+        ],
+        "unavailable": [
+            {"source": component(item.source), "target_kind": item.target_kind.value, "relationship_type": item.relationship_type.value, "reason": item.reason}
+            for item in topology.unavailable
+        ],
+    }
+
+
 def _compact_workflow(workflow: SpecialistWorkflowResult) -> dict[str, object]:
     """Execution outcomes only; evidence-bound specialist findings are already in incident.findings."""
     return {
@@ -151,6 +175,7 @@ def build_main_rca_prompt(request: MainRcaRequest, prompt_version: str) -> str:
         "incident": request.incident.model_dump(mode="json"),
         "correlation_graph": _compact_graph(request.graph),
         "specialist_workflow": _compact_workflow(request.workflow) if request.workflow else None,
+        "topology": _compact_topology(request.topology),
         "knowledge": [
             {"chunk_id": item.chunk.chunk_id, "source": item.chunk.source, "section": item.chunk.section, "text": item.chunk.text}
             for item in request.knowledge
@@ -160,6 +185,8 @@ def build_main_rca_prompt(request: MainRcaRequest, prompt_version: str) -> str:
         f"CLOUDRCA_MAIN_RCA_PROMPT_VERSION={prompt_version}",
         "Correlation edges are candidates only; make causal claims only when cited evidence supports them.",
         "Event details and provenance are in incident.source_events; graph nodes and edges reference events by ID.",
+        "topology lists observed structure (what runs on or depends on what) with its supporting evidence; it is not "
+        "evidence that one component caused another's failure. topology.unavailable lists relationships that cannot be observed.",
         "Every evidence reference must use an ID from INPUT. Disclose partial specialist execution in uncertainty.",
         "Return exactly one JSON object validating against RCA_REPORT_SCHEMA.",
         f"RCA_REPORT_SCHEMA={json.dumps(RCAReport.model_json_schema(mode='validation'), sort_keys=True, separators=(',', ':'))}",
@@ -171,6 +198,7 @@ def _allowed_ids(request: MainRcaRequest) -> set[str]:
     allowed = {item.reference_id for item in request.incident.source_events}
     allowed.update(item.chunk.chunk_id for item in request.knowledge)
     allowed.update(item.finding_id for item in request.incident.findings)
+    allowed.update(item.relationship_id for item in request.topology.relationships)
     for edge in request.graph.edges:
         allowed.update(reference.reference_id for reference in edge.evidence)
         allowed.update(edge.topology_relationship_ids)
