@@ -59,3 +59,17 @@ from cloudrca_backend.normalization import normalize_file
 batch = normalize_file("data/extracted/aiops2025/logs.parquet")
 print(batch.statistics)
 ```
+
+## CloudRCA records (application, database, VM/OS, EC2 CloudWatch)
+
+Records with a `cloudrca_record` field are validated by `cloudrca_backend.cloudrca_records` instead of the AIOps2025 rules above (which are unchanged). Every record needs `timestamp` (ISO 8601 with a timezone) and `source`; `event_id` (for example a CloudWatch Logs event ID), `level`, `log_group`, and `log_stream` are optional and preserved. Unknown fields are kept in the provenance raw record.
+
+| `cloudrca_record` | Layer | Required fields | Identifiers kept |
+| --- | --- | --- | --- |
+| `app.request_summary` | application | `service`, `instance_id`, `window_seconds`, `request_count` | service, `vm_id`; route and counts/durations as attributes |
+| `app.error` + `reported_by: application` | application | `service`, `instance_id`, `error_class`, `message` | service, `vm_id`, request ID, route, method, status |
+| `app.error` + `reported_by: database` | database (A1) | the above plus `database_id` | `database_id`, `vm_id`, request ID; the application is kept as `reporting_service` |
+| `host.heartbeat` | vm_guest_os (A2) | `instance_id` and at least one of load, CPU count, memory, or disk measures | `vm_id` |
+| `aws.cloudwatch.metric` | vm_guest_os (A2) | `namespace`, `metric_name`, numeric `value`, `dimensions.InstanceId` | `vm_id`; namespace, statistic, period, unit, all dimensions |
+
+Normalization preserves evidence and never decides causes: the layer comes from the record type and the emitter's own `reported_by` statement, not from message content. Database-reported errors keep the application only as an attribute so it is never treated as a database-layer component. No hypervisor host is set because AWS does not expose one. Missing fields are rejected as `MISSING_REQUIRED_FIELD`; wrong types, negative or inconsistent counts, booleans, unknown `reported_by` values, and missing `InstanceId` dimensions as `SCHEMA_VALIDATION_FAILED`; timestamps without a timezone as `INVALID_TIMESTAMP`. The same CloudWatch event exported twice is a duplicate; distinct event IDs are kept.

@@ -337,6 +337,19 @@ def normalize_record(record: SourceRecord, *, assumed_timezone: str | None = Non
     if record.parse_error:
         raise NormalizationError(record.parse_reason or RejectionReason.MALFORMED_RECORD, record.parse_error)
     data = record.data
+    if "cloudrca_record" in data:
+        # CloudRCA application/database/VM/CloudWatch records use their own validated shapes (cloudrca_records.py);
+        # the AIOps2025 path below is unchanged.
+        from .cloudrca_records import normalize_cloudrca_record
+
+        return normalize_cloudrca_record(
+            data,
+            record_location=(record.source_file, record.row_number, record.source_format),
+            raw_record=_safe_record(data),
+            parse_timestamp=parse_utc_timestamp,
+            stable_json=_stable_json,
+            error_factory=lambda reason, detail: NormalizationError(RejectionReason(reason), detail),
+        )
     record_kind, layer = _classify_record(data)
     timestamp_key = "@timestamp" if record_kind == "log" else "startTimeMillis" if record_kind == "trace" else "time"
     original_timestamp = data.get(timestamp_key)
