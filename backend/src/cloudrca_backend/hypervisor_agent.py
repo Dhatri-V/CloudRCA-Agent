@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from enum import StrEnum
 
 from pydantic import Field, ValidationError, model_validator
@@ -11,6 +12,7 @@ from .contracts import (
     ComponentKind,
     ComponentRef,
     Confidence,
+    ConfidenceLevel,
     ContractModel,
     Identifier,
     Layer,
@@ -24,6 +26,7 @@ from .specialist_runtime import (
     SpecialistRequest,
     SpecialistRuntime,
     SpecialistStructuredRunResult,
+    finding_contract_lines,
     specialist_event_context,
 )
 
@@ -128,6 +131,34 @@ class HypervisorAnalysis(ContractModel):
     findings: tuple[HypervisorFinding, ...] = ()
 
 
+_EXAMPLE_START, _EXAMPLE_END = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc), datetime(2026, 1, 1, 10, 3, tzinfo=timezone.utc)
+EXAMPLE_HYPERVISOR_FINDING = HypervisorFinding(
+    error_type=HypervisorErrorType.HOST_CPU,
+    severity=Severity.ERROR,
+    component=ComponentRef(component_id="host-id-from-input", kind=ComponentKind.HOST, layer=Layer.HYPERVISOR),
+    time_range=TimeWindow(start=_EXAMPLE_START, end=_EXAMPLE_END),
+    symptoms=(
+        HypervisorSymptom(
+            category=HypervisorErrorType.HOST_CPU, statement="Host CPU ready time rose.", evidence_event_ids=("event-id-from-input",)
+        ),
+    ),
+    observations=(
+        HypervisorObservation(
+            category=HypervisorErrorType.HOST_CPU, statement="Host CPU was saturated.", evidence_event_ids=("event-id-from-input",)
+        ),
+    ),
+    hypotheses=(
+        HypervisorHypothesis(
+            category=HypervisorErrorType.HOST_CPU,
+            statement="Host CPU contention may have slowed guests on this host.",
+            evidence_event_ids=("event-id-from-input",),
+            confidence=Confidence(score=0.5, level=ConfidenceLevel.MEDIUM),
+        ),
+    ),
+    confidence=Confidence(score=0.6, level=ConfidenceLevel.MEDIUM),
+)
+
+
 class HypervisorAgentInputError(ValueError):
     """Raised before Qwen is called for input outside A3's hypervisor boundary."""
 
@@ -152,6 +183,7 @@ def build_hypervisor_prompt(request: SpecialistRequest, prompt_version: str) -> 
         "If evidence conflicts, set evidence_state=contradictory, cite both contradiction_event_ids, and use "
         "confidence at or below 0.5.",
         "If no supported hypervisor anomaly exists, return {\"findings\": []} exactly.",
+        *finding_contract_lines(HypervisorFinding, EXAMPLE_HYPERVISOR_FINDING),
         "Return exactly one JSON object that validates against HYPERVISOR_ANALYSIS_SCHEMA.",
         f"HYPERVISOR_ANALYSIS_SCHEMA={json.dumps(HypervisorAnalysis.model_json_schema(mode='validation'), sort_keys=True, separators=(',', ':'))}",
         f"INPUT={json.dumps(payload, sort_keys=True, separators=(',', ':'))}",
