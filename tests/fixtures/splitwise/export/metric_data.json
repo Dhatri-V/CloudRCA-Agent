@@ -1,0 +1,6 @@
+{"MetricDataResults": [
+  {"Id": "cpu", "Label": "CPUUtilization", "Timestamps": ["2026-10-30T10:00:00+00:00", "2026-10-30T09:55:00+00:00", "2026-10-30T08:00:00+00:00"], "Values": [41.5, 12.0, 9.0], "StatusCode": "Complete"},
+  {"Id": "credits", "Label": "CPUCreditBalance", "Timestamps": ["2026-10-30T10:00:00+00:00", "2026-10-30T09:55:00+00:00"], "Values": [143.0, null], "StatusCode": "Complete"},
+  {"Id": "asg", "Label": "CPUUtilization", "Timestamps": ["2026-10-30T10:00:00+00:00"], "Values": [40.0], "StatusCode": "Complete"},
+  {"Id": "unknown", "Label": "x", "Timestamps": ["2026-10-30T10:00:00+00:00"], "Values": [1.0], "StatusCode": "Complete"}
+]}

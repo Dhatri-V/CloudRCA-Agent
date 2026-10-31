@@ -1,0 +1,5 @@
+[
+  {"Id": "cpu", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "CPUUtilization", "Dimensions": [{"Name": "InstanceId", "Value": "i-0synthetic01"}]}, "Period": 300, "Stat": "Average", "Unit": "Percent"}, "ReturnData": true},
+  {"Id": "credits", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "CPUCreditBalance", "Dimensions": [{"Name": "InstanceId", "Value": "i-0synthetic01"}]}, "Period": 300, "Stat": "Minimum"}, "ReturnData": true},
+  {"Id": "asg", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "CPUUtilization", "Dimensions": [{"Name": "AutoScalingGroupName", "Value": "synthetic-asg"}]}, "Period": 300, "Stat": "Average"}, "ReturnData": true}
+]
