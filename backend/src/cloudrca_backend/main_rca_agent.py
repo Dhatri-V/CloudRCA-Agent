@@ -225,6 +225,9 @@ REASONING_RULES = (
     "contradicting evidence; put non-selected candidates in alternative_hypotheses.",
     "3. Temporal overlap and topology do not prove causation. Every causal_chain edge needs evidence that the cause "
     "preceded and plausibly produced the effect (for example slower database operations during resource pressure).",
+    "Each causal_chain edge and the report-level evidence must cite at least one actual event ID from INPUT.events; "
+    "metric, log, and event are valid evidence kinds when their reference_id is an event ID. Findings and topology "
+    "may supplement but cannot replace those event citations.",
     "4. If the evidence cannot distinguish the candidates, say so in uncertainty, lower confidence, and name the "
     "missing telemetry that would distinguish them.",
     "5. Never claim evidence for layers listed in telemetry_coverage.unavailable or with no events.",
@@ -324,6 +327,19 @@ def validate_main_rca_report(raw: str, request: MainRcaRequest, config: Speciali
     )
     if unknown:
         raise MainRcaValidationError("report references evidence outside the supplied context", unknown)
+    event_ids = {item.reference_id for item in request.incident.source_events}
+    missing_event_evidence = []
+    if not any(item.reference_id in event_ids for item in report.evidence):
+        missing_event_evidence.append(_issue("missing_event_evidence", "evidence"))
+    missing_event_evidence.extend(
+        _issue("missing_event_evidence", f"causal_chain.{index}.evidence")
+        for index, edge in enumerate(report.causal_chain)
+        if not any(item.reference_id in event_ids for item in edge.evidence)
+    )
+    if missing_event_evidence:
+        raise MainRcaValidationError(
+            "report-level and causal-chain evidence must cite supplied events", tuple(missing_event_evidence)
+        )
     components = {item.component_id for item in request.incident.affected_components}
     if report.root_cause_component.component_id not in components:
         raise MainRcaValidationError(

@@ -1,0 +1,12 @@
+{
+  "fixture": "splitwise_vm_pressure_db_failure.jsonl",
+  "synthetic": true,
+  "scenario": "VM resource pressure precedes a SQLite database failure on the same instance.",
+  "expected_hypothesis": {
+    "layer": "vm_guest_os",
+    "component_id": "i-synthetic-vm-pressure",
+    "summary": "VM CPU, load, and memory pressure may be contributing to the later database failure."
+  },
+  "not_real_world_accuracy_evidence": true,
+  "expected_structure": {"normalized_events": 4, "routed": {"application": 1, "database": 1, "vm_guest_os": 2}, "incidents": 1, "incident_layers": ["application", "database", "vm_guest_os"]}
+}

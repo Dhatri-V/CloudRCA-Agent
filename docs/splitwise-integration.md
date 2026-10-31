@@ -17,7 +17,9 @@ One JSON object per line with `event`, a timezone-aware `ts`, `service`, and `in
 | --- | --- |
 | `request` | `request_id`, `method`, `route` (template, e.g. `/expenses/{expense_id}`), `status`, `duration_ms`, `db_ms`, `is_write`, `in_flight` |
 | `error` | `reported_by` (`application` or `database`, required), `error_class`, `message`, `request_id`, `method`, `route`, `status`, `database_id` (required when `reported_by=database`), `operation`, `duration_ms`, `db_wait_ms` |
-| `heartbeat` | `load_1m`, `load_5m`, `cpu_count`, `mem_available_mb`, `mem_total_mb`, `disk_free_mb`, `disk_total_mb` |
+| `heartbeat` | `load_1m`, `load_5m`, `cpu_count`, `mem_available_mb`, `mem_total_mb`, `disk_free_mb`, `disk_total_mb`, `db_pool_size`, `db_pool_checked_out`, `db_pool_overflow` |
+
+`db_pool_size`, `db_pool_checked_out`, and `db_pool_overflow` are optional non-negative integer snapshots emitted by Splitwise R6: the configured SQLAlchemy pool capacity, currently checked-out connections, and connections opened above that base capacity. The R6 logger clamps overflow to zero when SQLAlchemy reports a negative internal value.
 
 Logs must not contain request bodies, SQL parameters, credentials, or personal data (titles, amounts, names). The converter copies only the fields above, so anything else is dropped even if logged by mistake.
 
