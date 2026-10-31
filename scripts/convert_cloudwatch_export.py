@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Convert Splitwise application logs and EC2 CloudWatch metrics into CloudRCA records (standard library only).
 
-Inputs (any combination):
+Inputs (combine only sources that do not cover the same events; overlapping inputs would duplicate errors and counts):
   --app-log FILE          Splitwise JSON-lines log pulled from the instance (event: request | error | heartbeat)
   --logs-json FILE        output of `aws logs filter-log-events --output json` whose messages are those JSON lines
   --metric-data FILE      output of `aws cloudwatch get-metric-data --output json`
@@ -106,9 +106,17 @@ def _log_line(text: str, event_id: str, source: str, report: Report, log_group: 
     yield LogLine(data, timestamp, source, event_id, log_group, log_stream if isinstance(log_stream, str) else None)
 
 
+def _valid_error(data: dict[str, Any]) -> bool:
+    required = (data.get(name) for name in ("service", "instance_id", "error_class", "message"))
+    return all(isinstance(value, str) and value for value in required) and data.get("reported_by") in {"application", "database"}
+
+
 def _is_error(line: LogLine) -> bool:
+    """Window anchors: errors that will be converted, and 5xx request outcomes; malformed errors never stretch the window."""
     status = line.data.get("status")
-    return line.data.get("event") == "error" or (line.data.get("event") == "request" and isinstance(status, int) and status >= 500)
+    if line.data.get("event") == "error":
+        return _valid_error(line.data)
+    return line.data.get("event") == "request" and isinstance(status, int) and not isinstance(status, bool) and status >= 500
 
 
 def select_window(lines: list[LogLine], start: datetime | None, end: datetime | None, before: timedelta, after: timedelta) -> tuple[datetime, datetime]:
@@ -131,14 +139,21 @@ def _common(line: LogLine, kind: str) -> dict[str, Any]:
 
 def error_record(line: LogLine, report: Report) -> dict[str, Any] | None:
     data = line.data
-    required = {name: data.get(name) for name in ("service", "instance_id", "error_class", "message")}
-    reported_by = data.get("reported_by")  # stated by the logger; never defaulted, so database errors are not misattributed
-    if not all(isinstance(value, str) and value for value in required.values()) or reported_by not in {"application", "database"}:
+    # reported_by is stated by the logger and never defaulted, so database errors are not misattributed.
+    if not _valid_error(data):
         report.skipped["error_missing_required_fields"] += 1
         return None
-    record = {**_common(line, "app.error"), "level": "error", "reported_by": reported_by, **required}
+    required = {name: data[name] for name in ("service", "instance_id", "error_class", "message")}
+    record = {**_common(line, "app.error"), "level": "error", "reported_by": data["reported_by"], **required}
     record["message"] = str(required["message"])[:MAX_MESSAGE]
-    record.update({name: data[name] for name in ERROR_FIELDS if data.get(name) is not None})
+    for name in ERROR_FIELDS:
+        value = data.get(name)
+        if value is None:
+            continue
+        if isinstance(value, str) or _number(value) is not None:
+            record[name] = value
+        else:
+            report.skipped["error_field_not_scalar"] += 1  # nested or boolean values would invalidate the record
     return record
 
 
@@ -214,7 +229,11 @@ def metric_records(data_path: Path, queries_path: Path, window: tuple[datetime, 
             report.skipped["metric_result_without_query"] += 1
             continue
         metric = stat["Metric"]
-        dimensions = {item.get("Name"): item.get("Value") for item in metric.get("Dimensions", []) if isinstance(item, dict)}
+        dimensions = {
+            item["Name"]: item["Value"]
+            for item in metric.get("Dimensions", [])
+            if isinstance(item, dict) and isinstance(item.get("Name"), str) and isinstance(item.get("Value"), str)
+        }
         if not dimensions.get("InstanceId"):
             report.skipped["metric_without_instance_dimension"] += len(result.get("Values", []))
             continue
@@ -259,6 +278,8 @@ def convert(args: argparse.Namespace) -> tuple[list[dict[str, Any]], Report]:
         window = select_window(lines, start, end, timedelta(minutes=args.before_minutes), timedelta(minutes=args.after_minutes))
     elif start and end:
         window = (start, end)
+    elif args.metric_data:
+        raise SystemExit("Metrics-only conversion needs --start and --end; without logs there are no errors to anchor a window.")
     if window:
         report.window = (iso(window[0]), iso(window[1]))
         lines = [line for line in lines if window[0] <= line.timestamp <= window[1]]

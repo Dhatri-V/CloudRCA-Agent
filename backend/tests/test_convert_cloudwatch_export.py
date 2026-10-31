@@ -80,7 +80,7 @@ def test_metrics_keep_namespace_dimensions_statistic_and_period(tmp_path: Path) 
 def test_window_defaults_to_the_errors_and_drops_records_outside_it(tmp_path: Path) -> None:
     records = full(tmp_path)
     times = sorted(record["timestamp"] for record in records)
-    assert times[0] >= "2026-10-30T09:46:00Z" and times[-1] <= "2026-10-30T10:06:30Z"
+    assert times[0] >= "2026-10-30T09:46:00Z" and times[-1] <= "2026-10-30T10:06:20Z"
     assert not any(record.get("request_id") == "req-9999" for record in records)
     assert "2026-10-30T08:00:00Z" not in times
 
@@ -145,3 +145,36 @@ def test_converted_export_flows_through_the_pipeline_as_one_cross_layer_incident
     edges = {(item["source"]["component_id"], item["relationship_type"], item["target"]["component_id"]) for item in incident["topology"]["relationships"]}
     assert {("splitwise-api", "runs_on", "i-0synthetic01"), ("splitwise-sqlite", "runs_on", "i-0synthetic01"), ("splitwise-api", "depends_on", "splitwise-sqlite")} <= edges
     assert len(transport.prompts["main_rca"]) == 1
+
+
+def test_malformed_errors_do_not_anchor_the_window(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    full(tmp_path)
+    # The unattributed error at 10:01:25 is skipped, so the window ends 5 minutes after the last valid error (10:01:20).
+    assert json.loads(capsys.readouterr().err)["window"] == ["2026-10-30T09:46:10Z", "2026-10-30T10:06:20Z"]
+
+
+def test_non_scalar_optional_error_fields_are_dropped_not_fatal(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    log = tmp_path / "app.jsonl"
+    log.write_text(json.dumps({
+        "event": "error", "ts": "2026-10-30T10:00:00Z", "service": "s", "instance_id": "i-1", "reported_by": "application",
+        "error_class": "ValueError", "message": "SYNTHETIC", "route": {"nested": True}, "status": True, "request_id": "req-1",
+    }))
+    [record] = run(tmp_path, "--app-log", str(log))
+    assert record["request_id"] == "req-1" and "route" not in record and "status" not in record
+    assert json.loads(capsys.readouterr().err)["skipped"] == {"error_field_not_scalar": 2}
+    assert normalize_file(tmp_path / "converted.jsonl").statistics.accepted == 1
+
+
+def test_dimensions_without_string_names_are_ignored(tmp_path: Path) -> None:
+    queries = tmp_path / "queries.json"
+    queries.write_text(json.dumps([{"Id": "cpu", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "CPUUtilization", "Dimensions": [
+        {"Name": "InstanceId", "Value": "i-1"}, {"Name": 7, "Value": "x"}, {"Value": "no-name"}]}, "Period": 60, "Stat": "Average"}}]))
+    data = tmp_path / "data.json"
+    data.write_text(json.dumps({"MetricDataResults": [{"Id": "cpu", "Timestamps": ["2026-10-30T10:00:00Z"], "Values": [50.0]}]}))
+    [record] = run(tmp_path, "--metric-data", str(data), "--metric-queries", str(queries), "--start", "2026-10-30T09:00:00Z", "--end", "2026-10-30T11:00:00Z")
+    assert record["dimensions"] == {"InstanceId": "i-1"}
+
+
+def test_metrics_only_conversion_requires_an_explicit_window(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit, match="Metrics-only conversion needs --start and --end"):
+        main(["--metric-data", str(EXPORT / "metric_data.json"), "--metric-queries", str(EXPORT / "metric_queries.json"), "--output", str(tmp_path / "o.jsonl")])

@@ -39,6 +39,17 @@ aws cloudwatch get-metric-data \
   --output splitwise-incident.jsonl
 ```
 
-- Window: 15 minutes before the first error to 5 minutes after the last (`--before-minutes`, `--after-minutes`), or explicit `--start`/`--end`. Without errors and without an explicit window the converter refuses rather than exporting everything.
+If you exported the log from CloudWatch Logs instead, pass it with `--logs-json` (and `--log-group` to keep the group name):
+
+```bash
+.venv/bin/python scripts/convert_cloudwatch_export.py \
+  --logs-json logs.json --log-group /splitwise/app \
+  --metric-data metric_data.json --metric-queries metric_queries.json \
+  --output splitwise-incident.jsonl
+```
+
+Use one log source per event range: passing the same events through both `--app-log` and `--logs-json` would duplicate errors and double request counts. Metrics-only conversion requires `--start` and `--end`.
+
+- Window: 15 minutes before the first valid error (or 5xx request) to 5 minutes after the last (`--before-minutes`, `--after-minutes`), or explicit `--start`/`--end`. Without errors and without an explicit window the converter refuses rather than exporting everything.
 - Every valid error becomes its own `app.error` record; only `request` lines are summarized per window (`--window-seconds`, default 60) into counts, 5xx count, writes, p95/max duration, max DB time, and peak in-flight. Summaries carry no per-request details.
 - Errors without `reported_by`, malformed lines, naive timestamps, unknown event types, metric results without a query or an `InstanceId` dimension, and null datapoints are skipped and counted in the report printed to stderr.
