@@ -13,6 +13,7 @@ from typing import Any
 import cloudrca_backend.specialist_runtime as specialist_module
 import pytest
 from cloudrca_backend.contracts import Layer, NormalizedEvent, Provenance
+from cloudrca_backend.orchestration import LAYER_ORDER
 from cloudrca_backend.routing import RoutedEvent, load_routing_config, route_and_resolve
 from cloudrca_backend.settings import Profile, Settings, SettingsError
 from cloudrca_backend.specialist_runtime import (
@@ -149,7 +150,8 @@ class RecordingLogger:
         self.events.append((event, values))
 
 
-@pytest.mark.parametrize("layer", list(Layer))
+# A1/A2/A3 layers only: application is an evidence-only layer with no specialist.
+@pytest.mark.parametrize("layer", LAYER_ORDER)
 def test_runtime_succeeds_for_each_specialist_layer(layer: Layer) -> None:
     transport = FakeTransport([finding_json(layer)])
     result = SpecialistRuntime(config(), transport).run(SpecialistRequest(layer=layer, events=(routed(layer),)))

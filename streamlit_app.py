@@ -160,7 +160,7 @@ def render_incidents(settings: DashboardSettings) -> None:
             "Severity", ("", "critical", "error", "warning", "high", "medium", "low", "info", "debug", "unknown")
         ),
         "status": st.selectbox("Status", ("", "open", "investigating", "resolved")),
-        "layer": st.selectbox("Layer", ("", "database", "vm_guest_os", "host_hypervisor")),
+        "layer": st.selectbox("Layer", ("", "application", "database", "vm_guest_os", "host_hypervisor")),
     }
     sort_key = st.selectbox("Sort incidents by", ("timestamp", "severity", "summary"))
     offset = int(st.session_state.get("incident_offset", 0))
@@ -210,8 +210,9 @@ def render_detail(settings: DashboardSettings) -> None:
     outcome = payload.get("analysis_outcome")
     if isinstance(outcome, str):
         getattr(st, outcome_tone(outcome))(f"Analysis outcome: {display_label(outcome)}")
-    cards = st.columns(3)
-    for card, name, identifier in zip(cards, ("Database", "VM", "Hypervisor"), ("database", "vm_guest_os", "host_hypervisor"), strict=True):
+    cards = st.columns(4)
+    layers = (("Application", "application"), ("Database", "database"), ("VM", "vm_guest_os"), ("Hypervisor", "host_hypervisor"))
+    for card, (name, identifier) in zip(cards, layers, strict=True):
         card.metric(name, display_label(layer_state(payload, identifier)))
     uncertainty = payload.get("uncertainty")
     if isinstance(uncertainty, str) and uncertainty:

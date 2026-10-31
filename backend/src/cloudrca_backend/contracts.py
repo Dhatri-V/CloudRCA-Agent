@@ -38,6 +38,7 @@ class Layer(StrEnum):
     HYPERVISOR = "host_hypervisor"
     VM = "vm_guest_os"
     DATABASE = "database"
+    APPLICATION = "application"
 
 
 class Severity(StrEnum):

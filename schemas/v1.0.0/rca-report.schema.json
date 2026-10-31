@@ -212,7 +212,8 @@
       "enum": [
         "host_hypervisor",
         "vm_guest_os",
-        "database"
+        "database",
+        "application"
       ],
       "title": "Layer",
       "type": "string"
