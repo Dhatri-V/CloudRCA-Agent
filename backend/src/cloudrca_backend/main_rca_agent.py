@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from uuid import uuid4
 
+import structlog
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .contracts import ModelRuntimeProvenance, RCAReport
@@ -17,6 +18,7 @@ from .knowledge import RetrievedChunk
 from .orchestration import SpecialistWorkflowResult, WorkflowStatus
 from .settings import Settings, SettingsError
 from .specialist_runtime import (
+    EventLogger,
     JCodeConfigurationError,
     JCodeProviderError,
     JCodeTimeoutError,
@@ -57,6 +59,17 @@ class MainRcaMetadata:
 class MainRcaResult:
     report: RCAReport
     metadata: MainRcaMetadata
+
+
+REPAIR_EXCERPT_CHARACTERS = 2_000
+
+
+class MainRcaValidationError(ValueError):
+    """A rejected RCA report with safe, content-free issue records (error type and field path only)."""
+
+    def __init__(self, message: str, issues: tuple[dict[str, str], ...]) -> None:
+        super().__init__(message)
+        self.issues = issues
 
 
 class MainRcaError(RuntimeError):
@@ -114,6 +127,11 @@ def _compact_workflow(workflow: SpecialistWorkflowResult) -> dict[str, object]:
     }
 
 
+def _excerpt(text: str, limit: int = REPAIR_EXCERPT_CHARACTERS) -> str:
+    """Bound text echoed into a repair prompt; the full original context is already resent."""
+    return text if len(text) <= limit else f"{text[:limit]}... [truncated {len(text) - limit} characters]"
+
+
 def build_main_rca_prompt(request: MainRcaRequest, prompt_version: str) -> str:
     """Build bounded, canonical context; correlation edges are candidates, not causes."""
     payload = {
@@ -150,19 +168,32 @@ def validate_main_rca_report(raw: str, request: MainRcaRequest, config: Speciali
     try:
         report = RCAReport.model_validate_json(raw)
     except ValidationError as exc:
-        raise ValueError(json.dumps(exc.errors(include_input=False, include_url=False), sort_keys=True)) from exc
+        errors = exc.errors(include_input=False, include_url=False)
+        issues = tuple({"type": str(item["type"]), "loc": ".".join(str(part) for part in item["loc"])} for item in errors)
+        raise MainRcaValidationError(json.dumps(errors, default=str, sort_keys=True), issues) from exc
     if report.incident_id != request.incident.incident_id:
-        raise ValueError("report incident_id does not match input incident")
+        raise MainRcaValidationError(
+            "report incident_id does not match input incident", ({"type": "incident_id_mismatch", "loc": "incident_id"},)
+        )
     allowed = _allowed_ids(request)
     references = [*report.evidence, *(item for edge in report.causal_chain for item in edge.evidence), *(item for hypothesis in report.alternative_hypotheses for item in hypothesis.evidence)]
-    if any(reference.reference_id not in allowed for reference in references):
-        raise ValueError("report references evidence outside the supplied context")
+    unknown = sum(reference.reference_id not in allowed for reference in references)
+    if unknown:
+        raise MainRcaValidationError(
+            "report references evidence outside the supplied context",
+            tuple({"type": "unknown_evidence_reference", "loc": "evidence.reference_id"} for _ in range(unknown)),
+        )
     components = {item.component_id for item in request.incident.affected_components}
     if report.root_cause_component.component_id not in components:
-        raise ValueError("root cause component is not affected by the incident")
+        raise MainRcaValidationError(
+            "root cause component is not affected by the incident",
+            ({"type": "root_cause_component_not_affected", "loc": "root_cause_component.component_id"},),
+        )
     partial = request.workflow is not None and request.workflow.status is not WorkflowStatus.SUCCESS
     if partial and not report.uncertainty:
-        raise ValueError("partial specialist execution requires explicit uncertainty")
+        raise MainRcaValidationError(
+            "partial specialist execution requires explicit uncertainty", ({"type": "missing_uncertainty", "loc": "uncertainty"},)
+        )
     return report.model_copy(
         update={
             "runtime": ModelRuntimeProvenance(
@@ -177,8 +208,15 @@ def validate_main_rca_report(raw: str, request: MainRcaRequest, config: Speciali
 class MainRcaAgent:
     """Use the validated JCode transport for bounded GLM RCA generation."""
 
-    def __init__(self, config: SpecialistRuntimeConfig, transport: JCodeTransport, clock: Callable[[], float] = time.perf_counter) -> None:
+    def __init__(
+        self,
+        config: SpecialistRuntimeConfig,
+        transport: JCodeTransport,
+        clock: Callable[[], float] = time.perf_counter,
+        logger: EventLogger | None = None,
+    ) -> None:
         self._config, self._transport, self._clock = config, transport, clock
+        self._logger = logger or structlog.get_logger("cloudrca.main_rca")
 
     def analyze(self, request: MainRcaRequest) -> MainRcaResult:
         correlation_id = request.correlation_id or str(uuid4())
@@ -196,11 +234,36 @@ class MainRcaAgent:
                         report = validate_main_rca_report(unwrap_code_fence(response.text), request, self._config)
                         break
                     except ValueError as exc:
+                        # Log only issue types, field paths, and sizes: never the prompt, response, or evidence text.
+                        issues = exc.issues if isinstance(exc, MainRcaValidationError) else ({"type": "invalid_report", "loc": ""},)
+                        self._logger.info(
+                            "main_rca_validation_failed",
+                            correlation_id=correlation_id,
+                            provider_profile=self._config.provider_profile,
+                            model=self._config.model,
+                            attempt=repairs + 1,
+                            response_characters=len(response.text),
+                            issue_count=len(issues),
+                            issues=list(issues[:20]),
+                        )
                         if repairs >= self._config.max_repair_attempts:
                             raise MainRcaError(SpecialistFailureCode.INVALID_OUTPUT, str(exc)) from exc
                         repairs += 1
-                        current = _repair_prompt(prompt, response.text, str(exc), self._config.prompt_version, "RCAReport")
+                        current = _repair_prompt(
+                            prompt,
+                            _excerpt(response.text),
+                            _excerpt(str(exc)),
+                            self._config.prompt_version,
+                            "RCAReport",
+                        )
                         if len(current) > self._config.max_prompt_characters:
+                            self._logger.info(
+                                "main_rca_repair_prompt_too_large",
+                                correlation_id=correlation_id,
+                                prompt_characters=len(prompt),
+                                repair_prompt_characters=len(current),
+                                max_prompt_characters=self._config.max_prompt_characters,
+                            )
                             raise MainRcaError(SpecialistFailureCode.CONTEXT_LIMIT, "main RCA repair prompt exceeds configured context limit")
         except MainRcaError:
             raise
