@@ -62,6 +62,7 @@ class MainRcaResult:
 
 
 REPAIR_EXCERPT_CHARACTERS = 2_000
+MAX_LOGGED_LOC_CHARACTERS = 120
 
 
 class MainRcaValidationError(ValueError):
@@ -70,6 +71,18 @@ class MainRcaValidationError(ValueError):
     def __init__(self, message: str, issues: tuple[dict[str, str], ...]) -> None:
         super().__init__(message)
         self.issues = issues
+
+
+def _issue(error_type: str, loc: str) -> dict[str, str]:
+    return {"type": error_type, "loc": loc[:MAX_LOGGED_LOC_CHARACTERS]}
+
+
+def _schema_issue(error: Mapping[str, object]) -> dict[str, str]:
+    """Error type and field path only; a model-chosen unexpected key is replaced with a fixed placeholder."""
+    parts = [str(part) for part in error["loc"]] if isinstance(error["loc"], (list, tuple)) else []
+    if error["type"] == "extra_forbidden" and parts:
+        parts[-1] = "<unexpected_field>"
+    return _issue(str(error["type"]), ".".join(parts))
 
 
 class MainRcaError(RuntimeError):
@@ -169,30 +182,41 @@ def validate_main_rca_report(raw: str, request: MainRcaRequest, config: Speciali
         report = RCAReport.model_validate_json(raw)
     except ValidationError as exc:
         errors = exc.errors(include_input=False, include_url=False)
-        issues = tuple({"type": str(item["type"]), "loc": ".".join(str(part) for part in item["loc"])} for item in errors)
+        issues = tuple(_schema_issue(item) for item in errors)
         raise MainRcaValidationError(json.dumps(errors, default=str, sort_keys=True), issues) from exc
     if report.incident_id != request.incident.incident_id:
         raise MainRcaValidationError(
-            "report incident_id does not match input incident", ({"type": "incident_id_mismatch", "loc": "incident_id"},)
+            "report incident_id does not match input incident", (_issue("incident_id_mismatch", "incident_id"),)
         )
     allowed = _allowed_ids(request)
-    references = [*report.evidence, *(item for edge in report.causal_chain for item in edge.evidence), *(item for hypothesis in report.alternative_hypotheses for item in hypothesis.evidence)]
-    unknown = sum(reference.reference_id not in allowed for reference in references)
+    references = [
+        *((f"evidence.{index}", item) for index, item in enumerate(report.evidence)),
+        *(
+            (f"causal_chain.{edge_index}.evidence.{index}", item)
+            for edge_index, edge in enumerate(report.causal_chain)
+            for index, item in enumerate(edge.evidence)
+        ),
+        *(
+            (f"alternative_hypotheses.{hypothesis_index}.evidence.{index}", item)
+            for hypothesis_index, hypothesis in enumerate(report.alternative_hypotheses)
+            for index, item in enumerate(hypothesis.evidence)
+        ),
+    ]
+    unknown = tuple(
+        _issue("unknown_evidence_reference", f"{path}.reference_id") for path, item in references if item.reference_id not in allowed
+    )
     if unknown:
-        raise MainRcaValidationError(
-            "report references evidence outside the supplied context",
-            tuple({"type": "unknown_evidence_reference", "loc": "evidence.reference_id"} for _ in range(unknown)),
-        )
+        raise MainRcaValidationError("report references evidence outside the supplied context", unknown)
     components = {item.component_id for item in request.incident.affected_components}
     if report.root_cause_component.component_id not in components:
         raise MainRcaValidationError(
             "root cause component is not affected by the incident",
-            ({"type": "root_cause_component_not_affected", "loc": "root_cause_component.component_id"},),
+            (_issue("root_cause_component_not_affected", "root_cause_component.component_id"),),
         )
     partial = request.workflow is not None and request.workflow.status is not WorkflowStatus.SUCCESS
     if partial and not report.uncertainty:
         raise MainRcaValidationError(
-            "partial specialist execution requires explicit uncertainty", ({"type": "missing_uncertainty", "loc": "uncertainty"},)
+            "partial specialist execution requires explicit uncertainty", (_issue("missing_uncertainty", "uncertainty"),)
         )
     return report.model_copy(
         update={
@@ -216,7 +240,7 @@ class MainRcaAgent:
         logger: EventLogger | None = None,
     ) -> None:
         self._config, self._transport, self._clock = config, transport, clock
-        self._logger = logger or structlog.get_logger("cloudrca.main_rca")
+        self._logger = logger if logger is not None else structlog.get_logger("cloudrca.main_rca")
 
     def analyze(self, request: MainRcaRequest) -> MainRcaResult:
         correlation_id = request.correlation_id or str(uuid4())

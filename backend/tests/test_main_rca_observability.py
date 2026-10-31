@@ -91,7 +91,7 @@ def test_schema_failure_logs_types_and_paths_only_then_repair_succeeds() -> None
     [failure] = logger.named("main_rca_validation_failed")
     assert failure["attempt"] == 1 and failure["response_characters"] == len(invalid)
     assert {"type": "missing", "loc": "root_cause_layer"} in failure["issues"]
-    assert {"type": "extra_forbidden", "loc": "padding"} in failure["issues"]
+    assert {"type": "extra_forbidden", "loc": "<unexpected_field>"} in failure["issues"]
     assert all(set(issue) == {"type", "loc"} for issue in failure["issues"])
     assert SECRET_MARKER not in json.dumps(logger.events)
 
@@ -103,7 +103,10 @@ def test_semantic_failures_log_issue_types_without_identifiers() -> None:
     assert error.value.code is SpecialistFailureCode.INVALID_OUTPUT
     failures = logger.named("main_rca_validation_failed")
     assert [item["attempt"] for item in failures] == [1, 2]
-    assert failures[0]["issues"] == [{"type": "unknown_evidence_reference", "loc": "evidence.reference_id"}] * 2
+    assert failures[0]["issues"] == [
+        {"type": "unknown_evidence_reference", "loc": "evidence.0.reference_id"},
+        {"type": "unknown_evidence_reference", "loc": "causal_chain.0.evidence.0.reference_id"},
+    ]
     assert "invented-id" not in json.dumps(logger.events)
 
 
@@ -127,3 +130,24 @@ def test_oversized_repair_prompt_is_logged_with_sizes() -> None:
     [event] = logger.named("main_rca_repair_prompt_too_large")
     assert event["repair_prompt_characters"] > event["max_prompt_characters"] == limit
     assert set(event) == {"correlation_id", "prompt_characters", "repair_prompt_characters", "max_prompt_characters"}
+
+
+def test_unexpected_field_names_from_the_model_are_never_logged() -> None:
+    key = "x" * 500 + SECRET_MARKER
+    logger = Recorder()
+    with pytest.raises(MainRcaError):
+        MainRcaAgent(config(), Transport([json.dumps({key: 1}), json.dumps({key: 1})]), logger=logger).analyze(request())
+    issues = [issue for failure in logger.named("main_rca_validation_failed") for issue in failure["issues"]]
+    assert {"type": "extra_forbidden", "loc": "<unexpected_field>"} in issues
+    assert all(len(issue["loc"]) <= 120 for issue in issues)
+    assert SECRET_MARKER not in json.dumps(logger.events) and "xxxxxxxx" not in json.dumps(logger.events)
+
+
+def test_falsy_injected_logger_is_still_used() -> None:
+    class FalsyRecorder(Recorder):
+        def __len__(self) -> int:
+            return 0
+
+    logger = FalsyRecorder()
+    MainRcaAgent(config(), Transport(["not json", report()]), logger=logger).analyze(request())
+    assert logger.named("main_rca_validation_failed")
