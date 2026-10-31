@@ -20,3 +20,12 @@ def test_provider_profiles_use_the_cloudrca_namespace() -> None:
     for name in PROFILE_SETTINGS:
         assert settings[name].startswith("cloudrca-"), f"{name}={settings[name]!r} may collide with a JCode built-in"
     assert settings["CLOUDRCA_GLM_PROVIDER_PROFILE"] != settings["CLOUDRCA_QWEN_PROVIDER_PROFILE"]
+
+
+def test_default_openrouter_main_rca_model_is_free() -> None:
+    # The default must never point at a paid OpenRouter model; ":free" variants cost $0.
+    settings = example_settings()
+    assert settings["CLOUDRCA_GLM_BASE_URL"] == "https://openrouter.ai/api/v1"
+    assert settings["CLOUDRCA_GLM_MODEL"].endswith(":free")
+    assert settings["CLOUDRCA_GLM_API_KEY_ENV"] == "OPENROUTER_API_KEY"
+    assert "OPENROUTER_API_KEY" not in settings, "keys belong in .env, never in .env.example"

@@ -8,7 +8,7 @@ Local Python app for evidence-backed, cross-layer cloud root cause analysis (RCA
 - Specialists: `database_agent.py` (A1), `vm_agent.py` (A2), `hypervisor_agent.py` (A3). All LLM calls go through `specialist_runtime.py` (`SpecialistRuntime`, `JCodeCliTransport` → JCode CLI → OpenAI-compatible endpoint).
 - `contracts.py` — Pydantic contracts (three layers: database, vm_guest_os, host_hypervisor). Every finding/report must cite evidence IDs from the input; validators reject unknown IDs.
 - `api.py` — FastAPI + SQLite job/artifact store (`cloudrca-api`). `dashboard.py` + `streamlit_app.py` — UI.
-- LLM config is env-only: `CLOUDRCA_QWEN_*` (specialists), `CLOUDRCA_GLM_*` (main RCA; name is historical, any OpenAI-compatible provider). Provider profile names must start with `cloudrca-` (JCode reserves built-in names).
+- LLM config is env-only: `CLOUDRCA_QWEN_*` (specialists), `CLOUDRCA_GLM_*` (main RCA; name is historical: default is OpenRouter `nvidia/nemotron-3-ultra-550b-a55b:free`, Z.AI GLM optional). Provider profile names must start with `cloudrca-` (JCode reserves built-in names).
 
 ## Commands (from repo root)
 

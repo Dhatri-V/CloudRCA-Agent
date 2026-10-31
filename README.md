@@ -45,7 +45,7 @@ python3.12 -m venv .venv
 cp .env.example .env
 ```
 
-Configure `.env` for the services you intend to use, then export it in each terminal before starting the API (`set -a; source .env; set +a`); the application reads the process environment and does not load `.env` itself. Do not commit it. At minimum, keep the local API/database settings suitable for your machine. Configure Qwen/GLM-compatible provider credentials and endpoints only when you intend to run a workflow that calls those providers; the repository does not supply credentials or make live provider claims.
+Configure `.env` for the services you intend to use, then export it in each terminal before starting the API (`set -a; source .env; set +a`); the application reads the process environment and does not load `.env` itself. Do not commit it. At minimum, keep the local API/database settings suitable for your machine. Configure Qwen and main-RCA provider credentials and endpoints only when you intend to run a workflow that calls those providers; the repository does not supply credentials or make live provider claims.
 
 See [.env.example](.env.example) for the available setting names and [docs/development.md](docs/development.md) for the concise developer setup.
 
@@ -60,7 +60,7 @@ set -a; source .env; set +a
 .venv/bin/cloudrca-api
 ```
 
-Analysis calls the configured Qwen specialists and GLM main-RCA model through JCode. If the JCode binary, provider settings, or provider key are missing, the job finishes as `failed` with an error naming the missing setting; normalized events and candidate incidents are still stored for inspection.
+Analysis calls the configured Qwen specialists and the main-RCA model through JCode. The default main-RCA model is a free OpenRouter model (`OPENROUTER_API_KEY` in `.env`); Z.AI GLM-5.3 remains an optional alternative in `.env.example`. If the JCode binary, provider settings, or provider key are missing, the job finishes as `failed` with an error naming the missing setting; normalized events and candidate incidents are still stored for inspection.
 
 Terminal 2 starts Streamlit:
 
