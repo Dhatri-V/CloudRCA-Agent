@@ -16,7 +16,7 @@ import structlog
 from pydantic import ValidationError
 
 from .api import AnalysisResult, ArtifactKind, JobStatus
-from .contracts import EvidenceKind, EvidenceReference, Layer, Severity
+from .contracts import EvidenceKind, EvidenceReference, Layer, Severity, TimeWindow, TopologyRelationship
 from .correlation import CorrelationConfig, CorrelationGraph, CrossLayerCorrelator
 from .database_agent import DatabaseAgent
 from .hypervisor_agent import HypervisorAgent
@@ -32,7 +32,15 @@ from .orchestration import (
     WorkflowStatus,
 )
 from .reporting import ReportContext, ReportIntegrityError, render_markdown
-from .routing import RoutedEvent, RoutingConfig, RoutingLayer, load_routing_config, route_and_resolve
+from .routing import (
+    RoutedEvent,
+    RoutingConfig,
+    RoutingLayer,
+    TopologyResolution,
+    UnavailableTopology,
+    load_routing_config,
+    route_and_resolve,
+)
 from .settings import SettingsError, load_settings
 from .specialist_runtime import JCodeCliTransport, SpecialistRuntime, load_specialist_runtime_config
 from .vm_agent import VMAgent
@@ -110,6 +118,32 @@ def load_dataset_records(filename: str, content: bytes) -> tuple[SourceRecord, .
 
 def _severity(events: tuple[RoutedEvent, ...]) -> Severity:
     return max((item.event.severity for item in events), key=SEVERITY_ORDER.index)
+
+
+def incident_topology(events: tuple[RoutedEvent, ...]) -> TopologyResolution:
+    """Merge an incident's observed relationships; repeated observations of one edge pool their evidence."""
+    merged: dict[str, TopologyRelationship] = {}
+    for item in events:
+        for relationship in item.topology.relationships:
+            current = merged.get(relationship.relationship_id)
+            if current is None:
+                merged[relationship.relationship_id] = relationship
+                continue
+            evidence = {reference.evidence_id: reference for reference in (*current.evidence, *relationship.evidence)}
+            windows = [window for window in (current.validity, relationship.validity) if window is not None]
+            validity = TimeWindow(start=min(w.start for w in windows), end=max(w.end for w in windows)) if windows else None
+            merged[relationship.relationship_id] = current.model_copy(
+                update={"evidence": tuple(sorted(evidence.values(), key=lambda reference: reference.evidence_id)), "validity": validity}
+            )
+    unavailable: dict[tuple[str, ...], UnavailableTopology] = {}
+    for item in events:
+        for gap in item.topology.unavailable:
+            key = (gap.source.component_id, gap.source.kind.value, gap.target_kind.value, gap.relationship_type.value, gap.reason)
+            unavailable.setdefault(key, gap)
+    return TopologyResolution(
+        relationships=tuple(sorted(merged.values(), key=lambda relationship: relationship.relationship_id)),
+        unavailable=tuple(unavailable[key] for key in sorted(unavailable)),
+    )
 
 
 def _failed(error: str, artifacts: tuple[tuple[ArtifactKind, dict[str, object]], ...] = ()) -> AnalysisResult:
@@ -250,13 +284,17 @@ class RcaPipeline:
                 "no root cause was inferred.",
                 workflow, graph,
             )
+        topology = incident_topology(events)
         try:
             result = agents.main_rca.analyze(
-                MainRcaRequest(incident=incident, graph=graph, workflow=workflow, correlation_id=trace_id)
+                MainRcaRequest(incident=incident, graph=graph, workflow=workflow, topology=topology, correlation_id=trace_id)
             )
             finding_references = tuple(
                 EvidenceReference(evidence_id=f"evidence-{item.finding_id}", kind=EvidenceKind.FINDING, reference_id=item.finding_id)
                 for item in incident.findings
+            ) + tuple(
+                EvidenceReference(evidence_id=f"evidence-{item.relationship_id}", kind=EvidenceKind.TOPOLOGY, reference_id=item.relationship_id)
+                for item in topology.relationships
             )
             context = ReportContext(
                 report=result.report, events=tuple(item.event for item in events), graph=graph, evidence=finding_references
@@ -300,6 +338,7 @@ class RcaPipeline:
             "timestamp": incident.time_window.start.isoformat(),
             "layer": layer,
             "event_ids": [ref.reference_id for ref in incident.source_events],
+            "topology": incident_topology(analysis.events).model_dump(mode="json"),
             "analysis_outcome": analysis.outcome.value,
             "summary": str(report["probable_root_cause"]) if report else analysis.explanation,
             "uncertainty": analysis.explanation or None,

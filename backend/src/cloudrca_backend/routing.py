@@ -376,6 +376,97 @@ def _synthetic_host_placement(event: NormalizedEvent, augmentation: TopologyAugm
     )
 
 
+CLOUDRCA_RECORD_KINDS = frozenset({"app.request_summary", "app.error", "host.heartbeat", "aws.cloudwatch.metric"})
+AWS_HOST_UNAVAILABLE = "AWS does not expose the physical host or hypervisor placement of an EC2 instance."
+
+
+def _is_cloudrca_record(event: NormalizedEvent) -> bool:
+    return event.metadata.get("record_kind") in CLOUDRCA_RECORD_KINDS and event.provenance.kind is ProvenanceKind.OBSERVED
+
+
+def _attribute(event: NormalizedEvent, name: str) -> str | None:
+    attributes = event.metadata.get("source_attributes")
+    value = attributes.get(name) if isinstance(attributes, dict) else None
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _co_recorded(
+    event: NormalizedEvent, source: ComponentRef, target: ComponentRef, relationship_type: RelationshipType, description: str
+) -> TopologyRelationship | UnavailableTopology:
+    """An observed relationship from two identifiers in one record; conflicting identifiers yield none."""
+    if source.component_id == target.component_id:
+        return UnavailableTopology(
+            source=source,
+            target_kind=target.kind,
+            relationship_type=relationship_type,
+            reason=f"Conflicting identifiers: {source.component_id!r} names both the {source.kind.value} and the {target.kind.value}.",
+        )
+    return TopologyRelationship(
+        # Stable per observed edge, so repeated observations of the same edge merge their evidence downstream.
+        relationship_id=_stable_id(
+            "topology",
+            {
+                "type": relationship_type.value,
+                "source": f"{source.layer.value}:{source.kind.value}:{source.component_id}",
+                "target": f"{target.layer.value}:{target.kind.value}:{target.component_id}",
+            },
+        ),
+        source=source,
+        target=target,
+        relationship_type=relationship_type,
+        validity=TimeWindow(start=event.timestamp, end=event.timestamp),
+        provenance=Provenance(
+            kind=ProvenanceKind.OBSERVED, source="CloudRCA co-recorded identifiers", record_id=event.provenance.record_id
+        ),
+        evidence=(_event_evidence(event, description),),
+    )
+
+
+def _cloudrca_topology(event: NormalizedEvent, decision: RoutingDecision) -> TopologyResolution:
+    """Relationships stated by identifiers that appear together in one CloudRCA record; never inferred from names."""
+    candidates: list[TopologyRelationship | UnavailableTopology] = []
+    unavailable: list[UnavailableTopology] = []
+    vm = _component(event.vm_id, ComponentKind.VM, Layer.VM) if event.vm_id else None
+    if decision.layer is RoutingLayer.APPLICATION and event.service:
+        service = _component(event.service, ComponentKind.SERVICE, Layer.APPLICATION)
+        if vm:
+            candidates.append(_co_recorded(event, service, vm, RelationshipType.RUNS_ON, "Record names the service and the instance it ran on."))
+        else:
+            unavailable.append(
+                UnavailableTopology(
+                    source=service, target_kind=ComponentKind.VM, relationship_type=RelationshipType.RUNS_ON,
+                    reason="The record does not name the instance the service ran on.",
+                )
+            )
+        if context_database := _attribute(event, "database_id_context"):
+            candidates.append(
+                _co_recorded(
+                    event, service, _component(context_database, ComponentKind.DATABASE, Layer.DATABASE), RelationshipType.DEPENDS_ON,
+                    "Application error record names the service and the database it used.",
+                )
+            )
+    if decision.layer is RoutingLayer.DATABASE and event.database_id:
+        database_component = _component(event.database_id, ComponentKind.DATABASE, Layer.DATABASE)
+        if vm:
+            candidates.append(
+                _co_recorded(event, database_component, vm, RelationshipType.RUNS_ON, "Database error record names the database and the instance where it was used.")
+            )
+        if reporting := _attribute(event, "reporting_service"):
+            candidates.append(
+                _co_recorded(
+                    event, _component(reporting, ComponentKind.SERVICE, Layer.APPLICATION), database_component, RelationshipType.DEPENDS_ON,
+                    "Database error record names the service that issued the database operation.",
+                )
+            )
+    if vm:
+        unavailable.append(
+            UnavailableTopology(source=vm, target_kind=ComponentKind.HOST, relationship_type=RelationshipType.RUNS_ON, reason=AWS_HOST_UNAVAILABLE)
+        )
+    relationships = [item for item in candidates if isinstance(item, TopologyRelationship)]
+    unavailable.extend(item for item in candidates if isinstance(item, UnavailableTopology))
+    return TopologyResolution(relationships=tuple(relationships), unavailable=tuple(unavailable))
+
+
 def resolve_topology(
     event: NormalizedEvent,
     decision: RoutingDecision,
@@ -383,6 +474,8 @@ def resolve_topology(
     augmentations: tuple[TopologyAugmentation, ...] = (),
 ) -> TopologyResolution:
     """Resolve only observed relationships or explicitly supplied augmentations."""
+    if _is_cloudrca_record(event):
+        return _cloudrca_topology(event, decision)
     relationships: list[TopologyRelationship] = []
     unavailable: list[UnavailableTopology] = []
     vm_id = event.vm_id
