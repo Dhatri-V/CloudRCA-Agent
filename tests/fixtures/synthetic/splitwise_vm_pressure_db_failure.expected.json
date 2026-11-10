@@ -1,19 +1,68 @@
 {
   "fixture": "splitwise_vm_pressure_db_failure.jsonl",
   "synthetic": true,
-  "scenario": "VM resource pressure precedes a SQLite database failure on the same instance.",
+  "not_real_world_accuracy_evidence": true,
+  "scenario": "A burstable EC2 instance exhausts its CPU credits; CPU, load, and memory pressure rise while request rate, write rate, and concurrency stay at baseline. Database operation time then rises and SQLite busy timeouts surface as 'database is locked' on writes.",
   "expected_hypothesis": {
     "layer": "vm_guest_os",
     "component_id": "i-synthetic-vm-pressure",
-    "summary": "VM CPU, load, and memory pressure may be contributing to the later database failure."
+    "summary": "VM/OS resource pressure (CPU credit exhaustion with high load and low available memory) slowed SQLite operations so that writers exceeded the busy timeout; the lock errors are a downstream symptom reported by the database."
   },
-  "not_real_world_accuracy_evidence": true,
+  "reporting_component": {
+    "layer": "database",
+    "component_id": "splitwise-sqlite",
+    "note": "reports 'database is locked' but is not expected to be the cause"
+  },
+  "supporting_evidence": [
+    {
+      "event_id": "i-synthetic-vm-pressure-credits-10:05",
+      "fact": "CPUCreditBalance falls from 96 to 0"
+    },
+    {
+      "event_id": "i-synthetic-vm-pressure-cpu-10:05",
+      "fact": "CPUUtilization rises from 21% to 97%"
+    },
+    {
+      "event_id": "i-synthetic-vm-pressure-hb-10:05",
+      "fact": "load_1m 0.5 -> 6.8 and mem_available_mb ~600 -> 41 before any errors"
+    },
+    {
+      "event_id": "i-synthetic-vm-pressure-requests-10:05",
+      "fact": "max_db_ms 22-24 -> 1810 with no errors yet (database slows after the pressure begins)"
+    },
+    {
+      "event_id": "i-synthetic-vm-pressure-db-error-1",
+      "fact": "first 'database is locked' at 10:07:20, after pressure and slowdown"
+    }
+  ],
+  "contrary_or_competing": [
+    {
+      "hypothesis": "application write concurrency",
+      "layer": "application",
+      "evidence_against": "request_count ~40/min, write_count ~20/min, and max_in_flight 3-5 match the baseline windows"
+    },
+    {
+      "hypothesis": "database-internal fault",
+      "layer": "database",
+      "evidence_against": "no disk or I/O errors; disk_free_mb unchanged at 4096; errors appear only after VM pressure"
+    },
+    {
+      "hypothesis": "connection-pool exhaustion as cause",
+      "layer": "application",
+      "evidence_against": "pool checked-out rises 1 -> 3 -> 5 only as database time rises, i.e. as a consequence"
+    }
+  ],
+  "missing_telemetry": [
+    "SQLite lock holder and transaction durations",
+    "CPU steal time / throttling detail",
+    "swap activity"
+  ],
   "expected_structure": {
-    "normalized_events": 5,
+    "normalized_events": 18,
     "routed": {
-      "application": 2,
-      "database": 1,
-      "vm_guest_os": 2
+      "application": 8,
+      "database": 2,
+      "vm_guest_os": 8
     },
     "incidents": 1,
     "incident_layers": [
