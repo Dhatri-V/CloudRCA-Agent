@@ -1,19 +1,59 @@
 {
   "fixture": "splitwise_concurrency_sqlite_lock.jsonl",
   "synthetic": true,
-  "scenario": "High concurrent application writes cause SQLite lock contention while VM resource metrics remain healthy.",
+  "not_real_world_accuracy_evidence": true,
+  "scenario": "Write traffic surges roughly six-fold with 22-34 requests in flight while CPU, load, memory, and CPU credits stay healthy. SQLite serializes writers, database time rises, the connection pool saturates, and busy timeouts surface as 'database is locked'.",
   "expected_hypothesis": {
     "layer": "application",
     "component_id": "splitwise-api",
-    "summary": "Application write concurrency may be causing SQLite lock contention; healthy VM telemetry is contrary evidence for a VM-pressure explanation."
+    "summary": "Application write concurrency exceeded what SQLite's single-writer lock can serve within the busy timeout; the lock errors are reported by the database but caused by the application's workload."
   },
-  "not_real_world_accuracy_evidence": true,
+  "reporting_component": {
+    "layer": "database",
+    "component_id": "splitwise-sqlite",
+    "note": "reports 'database is locked' but is not expected to be the cause"
+  },
+  "supporting_evidence": [
+    {
+      "event_id": "i-synthetic-concurrency-requests-11:05",
+      "fact": "request_count 40 -> 131, write_count 18 -> 115, max_in_flight 3 -> 22 before any errors"
+    },
+    {
+      "event_id": "i-synthetic-concurrency-pool-11:05",
+      "fact": "pool checked-out 5 of 5 with overflow 3 as concurrency rises"
+    },
+    {
+      "event_id": "i-synthetic-concurrency-requests-11:07",
+      "fact": "write_count 128, max_in_flight 34, max_db_ms 5000, 18 HTTP 5xx"
+    },
+    {
+      "event_id": "i-synthetic-concurrency-db-error-1",
+      "fact": "first 'database is locked' at 11:07:15, after the write surge"
+    }
+  ],
+  "contrary_or_competing": [
+    {
+      "hypothesis": "VM/OS resource pressure",
+      "layer": "vm_guest_os",
+      "evidence_against": "CPUUtilization 19-26%, CPUCreditBalance ~97, load_1m <= 0.8, mem_available_mb >= 611 throughout"
+    },
+    {
+      "hypothesis": "database-internal fault",
+      "layer": "database",
+      "evidence_against": "no disk or I/O errors; database time rises only with write concurrency"
+    }
+  ],
+  "missing_telemetry": [
+    "SQLite lock holder and transaction durations",
+    "per-route write concurrency",
+    "client retry behaviour"
+  ],
   "expected_structure": {
-    "normalized_events": 5,
+    "normalized_events": 18,
     "routed": {
-      "application": 2,
-      "database": 1,
-      "vm_guest_os": 2
+      "application": 8,
+      "database": 2,
+      "vm_guest_os": 8
     },
     "incidents": 1,
     "incident_layers": [
