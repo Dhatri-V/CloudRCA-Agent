@@ -72,7 +72,8 @@ def _report(payload: dict[str, Any]) -> dict[str, Any]:
     component = next(
         (item for item in incident["affected_components"] if item["layer"] == "database"), incident["affected_components"][0]
     )
-    node = payload["correlation_graph"]["nodes"][0]
+    first = payload["events"][0] if payload.get("events") else payload["correlation_graph"]["nodes"][0]
+    node = {"event_id": first["event_id"], "timestamp": first["timestamp"]}
     evidence = [{"evidence_id": "cite-event", "kind": "event", "reference_id": node["event_id"]}]
     evidence += [{"evidence_id": f"cite-{item['finding_id']}", "kind": "finding", "reference_id": item["finding_id"]} for item in incident["findings"]]
     return {

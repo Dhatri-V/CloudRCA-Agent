@@ -43,7 +43,10 @@ def test_events_appear_once_with_their_facts_and_no_raw_records() -> None:
         assert compact["message"] == event.message and compact["layer"] == event.layer.value
         assert compact["provenance"]["record_id"] == event.provenance.record_id
     assert "raw_record" not in prompt
-    assert all(set(item) == {"evidence_id", "kind", "reference_id"} for item in data["incident"]["source_events"])
+    # Each event ID appears once: in events, not repeated as incident.source_events or graph nodes.
+    assert "source_events" not in data["incident"] and data["incident"]["event_count"] == len(rca_request.events)
+    assert "nodes" not in data["correlation_graph"]
+    assert all(prompt.count(event.event_id) >= 1 for event in rca_request.events)
 
 
 def test_edges_reference_events_by_id_and_rationales_are_summarized() -> None:
