@@ -92,10 +92,8 @@ class ErrorEvent(_Record):
         return self
 
 
-HEARTBEAT_MEASURES = (
-    "load_1m", "load_5m", "cpu_count", "mem_available_mb", "mem_total_mb", "disk_free_mb", "disk_total_mb",
-    "db_pool_size", "db_pool_checked_out", "db_pool_overflow",
-)
+HEARTBEAT_MEASURES = ("load_1m", "load_5m", "cpu_count", "mem_available_mb", "mem_total_mb", "disk_free_mb", "disk_total_mb")
+POOL_MEASURES = ("db_pool_size", "db_pool_checked_out", "db_pool_overflow")
 
 
 class Heartbeat(_Record):
@@ -110,14 +108,39 @@ class Heartbeat(_Record):
     mem_total_mb: Measure | None = None
     disk_free_mb: Measure | None = None
     disk_total_mb: Measure | None = None
+    # Declared only to reject them: the SQLAlchemy pool is application-process state, not VM/OS evidence.
+    db_pool_size: Any = None
+    db_pool_checked_out: Any = None
+    db_pool_overflow: Any = None
+
+    @model_validator(mode="after")
+    def needs_a_measurement(self) -> Heartbeat:
+        if any(getattr(self, name) is not None for name in POOL_MEASURES):
+            raise ValueError("connection-pool fields belong in an app.pool_snapshot record, not a VM heartbeat")
+        if all(getattr(self, name) is None for name in HEARTBEAT_MEASURES):
+            raise ValueError("heartbeat has no measurement")
+        return self
+
+
+class PoolSnapshot(_Record):
+    """The application's database connection-pool state (SQLAlchemy pool inside the service process)."""
+
+    cloudrca_record: Literal["app.pool_snapshot"]
+    service: Text
+    instance_id: Text
+    database_id: Text | None = None
     db_pool_size: Count | None = None
     db_pool_checked_out: Count | None = None
     db_pool_overflow: Count | None = None
 
     @model_validator(mode="after")
-    def needs_a_measurement(self) -> Heartbeat:
-        if all(getattr(self, name) is None for name in HEARTBEAT_MEASURES):
-            raise ValueError("heartbeat has no measurement")
+    def consistent_counts(self) -> PoolSnapshot:
+        if all(getattr(self, name) is None for name in POOL_MEASURES):
+            raise ValueError("pool snapshot has no measurement")
+        size, checked_out, overflow = self.db_pool_size, self.db_pool_checked_out, self.db_pool_overflow
+        # Only check capacity when all three are known: a missing overflow is unknown, not zero.
+        if size is not None and checked_out is not None and overflow is not None and checked_out > size + overflow:
+            raise ValueError("db_pool_checked_out cannot exceed db_pool_size + db_pool_overflow")
         return self
 
 
@@ -144,6 +167,7 @@ RECORD_MODELS: dict[str, type[_Record]] = {
     "app.request_summary": RequestSummary,
     "app.error": ErrorEvent,
     "host.heartbeat": Heartbeat,
+    "app.pool_snapshot": PoolSnapshot,
     "aws.cloudwatch.metric": CloudWatchMetric,
 }
 
@@ -180,6 +204,14 @@ def _heartbeat(record: Heartbeat) -> tuple[Layer, str, dict[str, Any], dict[str,
     return Layer.VM, f"host heartbeat: {_measure_text(record, HEARTBEAT_MEASURES)}", {"vm_id": record.instance_id}, _attributes(record, HEARTBEAT_MEASURES)
 
 
+def _pool_snapshot(record: PoolSnapshot) -> tuple[Layer, str, dict[str, Any], dict[str, JsonValue]]:
+    message = f"{record.service} connection pool: {_measure_text(record, POOL_MEASURES)}"
+    attributes = _attributes(record, POOL_MEASURES)
+    if record.database_id:
+        attributes["database_id_context"] = record.database_id
+    return Layer.APPLICATION, message, {"service": record.service, "vm_id": record.instance_id}, attributes
+
+
 def _metric(record: CloudWatchMetric) -> tuple[Layer, str, dict[str, Any], dict[str, JsonValue]]:
     statistic = f" {record.statistic}" if record.statistic else ""
     unit = f" {record.unit}" if record.unit else ""
@@ -196,6 +228,7 @@ BUILDERS: dict[str, Callable[[Any], tuple[Layer, str, dict[str, Any], dict[str, 
     "app.request_summary": _request_summary,
     "app.error": _error,
     "host.heartbeat": _heartbeat,
+    "app.pool_snapshot": _pool_snapshot,
     "aws.cloudwatch.metric": _metric,
 }
 

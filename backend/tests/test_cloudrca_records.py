@@ -67,8 +67,10 @@ def test_timestamps_identifiers_and_provenance_are_preserved() -> None:
     assert metric.vm_id == "i-0synthetic01"
     assert metric.metadata["source_attributes"]["dimensions"] == {"InstanceId": "i-0synthetic01"}  # type: ignore[index]
     assert metric.message == "AWS/EC2 CPUUtilization Average=34 Percent (period 60s)"
-    heartbeat_attributes = events["hb-1000"].metadata["source_attributes"]
-    assert {key: heartbeat_attributes[key] for key in ("db_pool_size", "db_pool_checked_out", "db_pool_overflow")} == {  # type: ignore[index]
+    assert not set(events["hb-1000"].metadata["source_attributes"]) & {"db_pool_size", "db_pool_checked_out", "db_pool_overflow"}  # type: ignore[arg-type]
+    pool = events["hb-1000:pool"]  # the SQLAlchemy pool is application evidence, not VM evidence
+    assert (pool.layer, pool.service, pool.vm_id) == (Layer.APPLICATION, "splitwise-api", "i-0synthetic01")
+    assert {key: pool.metadata["source_attributes"][key] for key in ("db_pool_size", "db_pool_checked_out", "db_pool_overflow")} == {  # type: ignore[index]
         "db_pool_size": 5, "db_pool_checked_out": 5, "db_pool_overflow": 2,
     }
     application_error = events["err-1001-b"]
@@ -164,3 +166,36 @@ def test_pipeline_sends_only_database_and_vm_records_to_specialists(scripted_jco
     assert vm_prompt_ids == {events["metric-cpu-1000"], events["hb-1000"]}
     [rca_input] = transport.prompts["main_rca"]
     assert {events["summary-1001"], events["err-1001-b"]} <= {item["reference_id"] for item in rca_input["incident"]["source_events"]}
+
+
+def test_pool_snapshots_are_application_evidence_and_never_vm_heartbeats(tmp_path: Path) -> None:
+    pool = next(record for record in RECORDS if record["cloudrca_record"] == "app.pool_snapshot")
+    [event] = normalize_one(pool, tmp_path).events
+    assert route_and_resolve(event, ROUTING).routing.layer is RoutingLayer.APPLICATION
+    legacy = {**RECORDS[1], "db_pool_checked_out": 5}  # pool counts on a VM heartbeat are rejected, not reinterpreted
+    batch = normalize_one(legacy, tmp_path)
+    assert batch.rejected[0].reason is RejectionReason.SCHEMA_VALIDATION_FAILED
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"db_pool_checked_out": 9, "db_pool_size": 5, "db_pool_overflow": 2},  # more checked out than the pool can hold
+        {"db_pool_size": None, "db_pool_checked_out": None, "db_pool_overflow": None},
+        {"db_pool_overflow": -1},
+        {"service": None},
+    ],
+)
+def test_invalid_pool_snapshots_are_rejected(change: dict[str, Any], tmp_path: Path) -> None:
+    pool = next(record for record in RECORDS if record["cloudrca_record"] == "app.pool_snapshot")
+    record = {key: value for key, value in {**pool, **change}.items() if value is not None}
+    batch = normalize_one(record, tmp_path)
+    assert batch.statistics.rejected == 1
+
+
+def test_pool_capacity_is_checked_only_when_overflow_is_known(tmp_path: Path) -> None:
+    pool = next(record for record in RECORDS if record["cloudrca_record"] == "app.pool_snapshot")
+    unknown_overflow = {key: value for key, value in {**pool, "db_pool_size": 5, "db_pool_checked_out": 9}.items() if key != "db_pool_overflow"}
+    assert normalize_one(unknown_overflow, tmp_path).statistics.accepted == 1
+    zero_overflow = {**pool, "db_pool_size": 5, "db_pool_checked_out": 9, "db_pool_overflow": 0}
+    assert normalize_one(zero_overflow, tmp_path).statistics.rejected == 1

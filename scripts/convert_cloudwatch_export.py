@@ -26,11 +26,8 @@ from typing import Any
 
 ERROR_FIELDS = ("request_id", "route", "method", "status", "operation", "duration_ms", "db_wait_ms", "database_id")
 # These names and meanings are emitted by splitwise-backend R6 (85629fc).
-HEARTBEAT_FIELDS = (
-    "load_1m", "load_5m", "cpu_count", "mem_available_mb", "mem_total_mb", "disk_free_mb", "disk_total_mb",
-    "db_pool_size", "db_pool_checked_out", "db_pool_overflow",
-)
-HEARTBEAT_COUNT_FIELDS = ("cpu_count", "db_pool_size", "db_pool_checked_out", "db_pool_overflow")
+HEARTBEAT_FIELDS = ("load_1m", "load_5m", "cpu_count", "mem_available_mb", "mem_total_mb", "disk_free_mb", "disk_total_mb")
+POOL_FIELDS = ("db_pool_size", "db_pool_checked_out", "db_pool_overflow")
 MAX_MESSAGE = 2_000
 
 
@@ -162,16 +159,35 @@ def error_record(line: LogLine, report: Report) -> dict[str, Any] | None:
     return record
 
 
-def heartbeat_record(line: LogLine, report: Report) -> dict[str, Any] | None:
-    measures = {name: value for name in HEARTBEAT_FIELDS if (value := _number(line.data.get(name))) is not None}
-    instance = line.data.get("instance_id")
-    if not isinstance(instance, str) or not instance or not measures:
+def heartbeat_records(line: LogLine, report: Report) -> list[dict[str, Any]]:
+    """Split one heartbeat line: VM/OS measures -> host.heartbeat; SQLAlchemy pool counts -> app.pool_snapshot.
+
+    The pool lives inside the application process, so its counts are application evidence, not VM evidence.
+    """
+    instance, service = line.data.get("instance_id"), line.data.get("service")
+    if not isinstance(instance, str) or not instance:
         report.skipped["heartbeat_missing_required_fields"] += 1
-        return None
-    for measure in HEARTBEAT_COUNT_FIELDS:
-        if measure in measures:
-            measures[measure] = int(measures[measure])
-    return {**_common(line, "host.heartbeat"), "instance_id": instance, **measures}
+        return []
+    records: list[dict[str, Any]] = []
+    measures = {name: value for name in HEARTBEAT_FIELDS if (value := _number(line.data.get(name))) is not None}
+    if "cpu_count" in measures:
+        measures["cpu_count"] = int(measures["cpu_count"])
+    if measures:
+        records.append({**_common(line, "host.heartbeat"), "instance_id": instance, **measures})
+    raw_pool = {name: value for name in POOL_FIELDS if (value := _number(line.data.get(name))) is not None}
+    negative = sum(value < 0 for value in raw_pool.values())
+    if negative:
+        report.skipped["pool_value_negative"] += negative  # dropped, never clamped or reinterpreted
+    pool = {name: int(value) for name, value in raw_pool.items() if value >= 0}
+    if pool:
+        if isinstance(service, str) and service:
+            snapshot = {**_common(line, "app.pool_snapshot"), "event_id": f"{line.event_id}:pool", "service": service, "instance_id": instance, **pool}
+            records.append(snapshot)
+        else:
+            report.skipped["pool_snapshot_missing_service"] += 1
+    if not records:
+        report.skipped["heartbeat_missing_required_fields"] += 1
+    return records
 
 
 def _p95(values: list[float]) -> float:
@@ -298,8 +314,7 @@ def convert(args: argparse.Namespace) -> tuple[list[dict[str, Any]], Report]:
             if record := error_record(line, report):
                 records.append(record)
         elif kind == "heartbeat":
-            if record := heartbeat_record(line, report):
-                records.append(record)
+            records.extend(heartbeat_records(line, report))
         elif kind == "request":
             requests.append(line)
         else:

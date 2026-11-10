@@ -8,5 +8,18 @@
     "summary": "VM CPU, load, and memory pressure may be contributing to the later database failure."
   },
   "not_real_world_accuracy_evidence": true,
-  "expected_structure": {"normalized_events": 4, "routed": {"application": 1, "database": 1, "vm_guest_os": 2}, "incidents": 1, "incident_layers": ["application", "database", "vm_guest_os"]}
+  "expected_structure": {
+    "normalized_events": 5,
+    "routed": {
+      "application": 2,
+      "database": 1,
+      "vm_guest_os": 2
+    },
+    "incidents": 1,
+    "incident_layers": [
+      "application",
+      "database",
+      "vm_guest_os"
+    ]
+  }
 }

@@ -78,7 +78,9 @@ def test_repeated_observations_merge_their_evidence_without_new_relationships() 
         ("splitwise-api", "depends_on", "splitwise-sqlite"),
     }
     runs_on = by_edge[("splitwise-api", "runs_on", "i-0synthetic01")]
-    assert {reference.reference_id for reference in runs_on.evidence} == {routed["summary-1001"].event.event_id, routed["err-1001-b"].event.event_id}
+    assert {reference.reference_id for reference in runs_on.evidence} == {
+        routed["summary-1001"].event.event_id, routed["err-1001-b"].event.event_id, routed["hb-1000:pool"].event.event_id,
+    }
     assert runs_on.validity is not None and runs_on.validity.start < runs_on.validity.end
 
 

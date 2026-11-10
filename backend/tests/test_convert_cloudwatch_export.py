@@ -38,19 +38,36 @@ def of(records: list[dict[str, Any]], kind: str) -> list[dict[str, Any]]:
 def test_output_is_accepted_by_the_normalizer(tmp_path: Path) -> None:
     full(tmp_path)
     batch = normalize_file(tmp_path / "converted.jsonl")
-    assert batch.statistics.rejected == 0 and batch.statistics.accepted == 9
+    assert batch.statistics.rejected == 0 and batch.statistics.accepted == 11  # 9 records + 2 pool snapshots split from heartbeats
 
 
-def test_r6_heartbeat_pool_metrics_are_preserved_through_normalization(tmp_path: Path) -> None:
+def test_r6_heartbeat_pool_metrics_become_application_pool_snapshots(tmp_path: Path) -> None:
     records = full(tmp_path)
-    heartbeats = of(records, "host.heartbeat")
+    assert all(not set(item) & {"db_pool_size", "db_pool_checked_out", "db_pool_overflow"} for item in of(records, "host.heartbeat"))
+    snapshots = of(records, "app.pool_snapshot")
     assert [
-        (item["db_pool_size"], item["db_pool_checked_out"], item["db_pool_overflow"])
-        for item in heartbeats
-    ] == [(5, 1, 0), (5, 5, 2)]
+        (item["event_id"], item["service"], item["instance_id"], item["db_pool_size"], item["db_pool_checked_out"], item["db_pool_overflow"])
+        for item in snapshots
+    ] == [
+        ("app_log.jsonl:1:pool", "splitwise-api", "i-0synthetic01", 5, 1, 0),
+        ("app_log.jsonl:4:pool", "splitwise-api", "i-0synthetic01", 5, 5, 2),
+    ]
     events = {event.provenance.record_id: event for event in normalize_file(tmp_path / "converted.jsonl").events}
-    attributes = events["app_log.jsonl:4"].metadata["source_attributes"]
-    assert attributes["db_pool_size"] == 5 and attributes["db_pool_checked_out"] == 5 and attributes["db_pool_overflow"] == 2  # type: ignore[index]
+    pool = events["app_log.jsonl:4:pool"]
+    assert pool.layer.value == "application" and pool.service == "splitwise-api"
+    assert pool.metadata["source_attributes"]["db_pool_checked_out"] == 5  # type: ignore[index]
+    assert events["app_log.jsonl:4"].layer.value == "vm_guest_os"
+
+
+def test_pool_counts_without_a_service_are_skipped_not_guessed(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    log = tmp_path / "app.jsonl"
+    log.write_text("\n".join(json.dumps(line) for line in (
+        {"event": "heartbeat", "ts": "2026-10-30T10:00:00Z", "instance_id": "i-1", "load_1m": 0.5, "db_pool_checked_out": 5},
+        {"event": "error", "ts": "2026-10-30T10:00:05Z", "service": "s", "instance_id": "i-1", "reported_by": "application", "error_class": "E", "message": "SYNTHETIC"},
+    )))
+    records = run(tmp_path, "--app-log", str(log))
+    assert [record["cloudrca_record"] for record in records] == ["host.heartbeat", "app.error"]
+    assert json.loads(capsys.readouterr().err)["skipped"] == {"pool_snapshot_missing_service": 1}
 
 
 def test_every_valid_error_is_kept_one_to_one_with_its_identifiers(tmp_path: Path) -> None:
@@ -125,7 +142,7 @@ def test_malformed_and_unattributed_lines_are_skipped_with_reasons(tmp_path: Pat
         "metric_without_instance_dimension": 1,
         "unknown_event_type": 1,
     }
-    assert report["converted"] == {"app.error": 2, "app.request_summary": 2, "aws.cloudwatch.metric": 3, "host.heartbeat": 2}
+    assert report["converted"] == {"app.error": 2, "app.pool_snapshot": 2, "app.request_summary": 2, "aws.cloudwatch.metric": 3, "host.heartbeat": 2}
 
 
 def test_cloudwatch_logs_export_keeps_event_ids_and_streams(tmp_path: Path) -> None:
@@ -190,3 +207,17 @@ def test_dimensions_without_string_names_are_ignored(tmp_path: Path) -> None:
 def test_metrics_only_conversion_requires_an_explicit_window(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match="Metrics-only conversion needs --start and --end"):
         main(["--metric-data", str(EXPORT / "metric_data.json"), "--metric-queries", str(EXPORT / "metric_queries.json"), "--output", str(tmp_path / "o.jsonl")])
+
+
+def test_negative_pool_values_are_dropped_and_reported(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    log = tmp_path / "app.jsonl"
+    log.write_text("\n".join(json.dumps(line) for line in (
+        {"event": "heartbeat", "ts": "2026-10-30T10:00:00Z", "service": "s", "instance_id": "i-1", "load_1m": 0.5, "db_pool_size": 5, "db_pool_overflow": -4},
+        {"event": "heartbeat", "ts": "2026-10-30T10:00:30Z", "service": "s", "instance_id": "i-1", "db_pool_overflow": -2},
+        {"event": "error", "ts": "2026-10-30T10:00:05Z", "service": "s", "instance_id": "i-1", "reported_by": "application", "error_class": "E", "message": "SYNTHETIC"},
+    )))
+    records = run(tmp_path, "--app-log", str(log))
+    [snapshot] = [record for record in records if record["cloudrca_record"] == "app.pool_snapshot"]
+    assert snapshot["db_pool_size"] == 5 and "db_pool_overflow" not in snapshot
+    skipped = json.loads(capsys.readouterr().err)["skipped"]
+    assert skipped == {"pool_value_negative": 2, "heartbeat_missing_required_fields": 1}
