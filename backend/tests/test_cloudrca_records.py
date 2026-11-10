@@ -191,3 +191,11 @@ def test_invalid_pool_snapshots_are_rejected(change: dict[str, Any], tmp_path: P
     record = {key: value for key, value in {**pool, **change}.items() if value is not None}
     batch = normalize_one(record, tmp_path)
     assert batch.statistics.rejected == 1
+
+
+def test_pool_capacity_is_checked_only_when_overflow_is_known(tmp_path: Path) -> None:
+    pool = next(record for record in RECORDS if record["cloudrca_record"] == "app.pool_snapshot")
+    unknown_overflow = {key: value for key, value in {**pool, "db_pool_size": 5, "db_pool_checked_out": 9}.items() if key != "db_pool_overflow"}
+    assert normalize_one(unknown_overflow, tmp_path).statistics.accepted == 1
+    zero_overflow = {**pool, "db_pool_size": 5, "db_pool_checked_out": 9, "db_pool_overflow": 0}
+    assert normalize_one(zero_overflow, tmp_path).statistics.rejected == 1

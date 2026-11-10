@@ -138,7 +138,8 @@ class PoolSnapshot(_Record):
         if all(getattr(self, name) is None for name in POOL_MEASURES):
             raise ValueError("pool snapshot has no measurement")
         size, checked_out, overflow = self.db_pool_size, self.db_pool_checked_out, self.db_pool_overflow
-        if size is not None and checked_out is not None and checked_out > size + (overflow or 0):
+        # Only check capacity when all three are known: a missing overflow is unknown, not zero.
+        if size is not None and checked_out is not None and overflow is not None and checked_out > size + overflow:
             raise ValueError("db_pool_checked_out cannot exceed db_pool_size + db_pool_overflow")
         return self
 

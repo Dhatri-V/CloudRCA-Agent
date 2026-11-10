@@ -207,3 +207,17 @@ def test_dimensions_without_string_names_are_ignored(tmp_path: Path) -> None:
 def test_metrics_only_conversion_requires_an_explicit_window(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match="Metrics-only conversion needs --start and --end"):
         main(["--metric-data", str(EXPORT / "metric_data.json"), "--metric-queries", str(EXPORT / "metric_queries.json"), "--output", str(tmp_path / "o.jsonl")])
+
+
+def test_negative_pool_values_are_dropped_and_reported(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    log = tmp_path / "app.jsonl"
+    log.write_text("\n".join(json.dumps(line) for line in (
+        {"event": "heartbeat", "ts": "2026-10-30T10:00:00Z", "service": "s", "instance_id": "i-1", "load_1m": 0.5, "db_pool_size": 5, "db_pool_overflow": -4},
+        {"event": "heartbeat", "ts": "2026-10-30T10:00:30Z", "service": "s", "instance_id": "i-1", "db_pool_overflow": -2},
+        {"event": "error", "ts": "2026-10-30T10:00:05Z", "service": "s", "instance_id": "i-1", "reported_by": "application", "error_class": "E", "message": "SYNTHETIC"},
+    )))
+    records = run(tmp_path, "--app-log", str(log))
+    [snapshot] = [record for record in records if record["cloudrca_record"] == "app.pool_snapshot"]
+    assert snapshot["db_pool_size"] == 5 and "db_pool_overflow" not in snapshot
+    skipped = json.loads(capsys.readouterr().err)["skipped"]
+    assert skipped == {"pool_value_negative": 2, "heartbeat_missing_required_fields": 1}

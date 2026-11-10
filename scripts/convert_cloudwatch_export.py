@@ -174,7 +174,11 @@ def heartbeat_records(line: LogLine, report: Report) -> list[dict[str, Any]]:
         measures["cpu_count"] = int(measures["cpu_count"])
     if measures:
         records.append({**_common(line, "host.heartbeat"), "instance_id": instance, **measures})
-    pool = {name: int(value) for name in POOL_FIELDS if (value := _number(line.data.get(name))) is not None and value >= 0}
+    raw_pool = {name: value for name in POOL_FIELDS if (value := _number(line.data.get(name))) is not None}
+    negative = sum(value < 0 for value in raw_pool.values())
+    if negative:
+        report.skipped["pool_value_negative"] += negative  # dropped, never clamped or reinterpreted
+    pool = {name: int(value) for name, value in raw_pool.items() if value >= 0}
     if pool:
         if isinstance(service, str) and service:
             snapshot = {**_common(line, "app.pool_snapshot"), "event_id": f"{line.event_id}:pool", "service": service, "instance_id": instance, **pool}
