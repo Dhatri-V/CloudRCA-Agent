@@ -254,7 +254,8 @@ REASONING_RULES = (
     "2. Weigh application, database, VM/OS, and infrastructure explanations. For each candidate cite supporting and "
     "contradicting evidence; put non-selected candidates in alternative_hypotheses.",
     "3. Temporal overlap and topology do not prove causation. Every causal_chain edge needs evidence that the cause "
-    "preceded and plausibly produced the effect (for example slower database operations during resource pressure).",
+    "preceded and plausibly produced the effect (for example slower database operations during resource pressure). "
+    "The causal_chain must be acyclic: an effect never leads back to its own cause.",
     "Each causal_chain edge and the report-level evidence must cite at least one actual event ID from INPUT.events; "
     "metric, log, and event are valid evidence kinds when their reference_id is an event ID. Findings and topology "
     "may supplement but cannot replace those event citations.",
@@ -328,6 +329,27 @@ def _allowed_ids(request: MainRcaRequest) -> set[str]:
     return allowed
 
 
+def _cyclic_edge_indices(report: RCAReport) -> list[int]:
+    """Indices of causal_chain edges that lie on a cycle (the edge's cause is reachable from its effect)."""
+    successors: dict[str, set[str]] = {}
+    for edge in report.causal_chain:
+        successors.setdefault(edge.cause_id, set()).add(edge.effect_id)
+
+    def reachable(start: str, target: str) -> bool:
+        seen, pending = {start}, [start]
+        while pending:
+            node = pending.pop()
+            if node == target:
+                return True
+            for following in successors.get(node, ()):
+                if following not in seen:
+                    seen.add(following)
+                    pending.append(following)
+        return False
+
+    return [index for index, edge in enumerate(report.causal_chain) if reachable(edge.effect_id, edge.cause_id)]
+
+
 def validate_main_rca_report(raw: str, request: MainRcaRequest, config: SpecialistRuntimeConfig) -> RCAReport:
     try:
         report = RCAReport.model_validate_json(raw)
@@ -370,6 +392,12 @@ def validate_main_rca_report(raw: str, request: MainRcaRequest, config: Speciali
     if missing_event_evidence:
         raise MainRcaValidationError(
             "report-level and causal-chain evidence must cite supplied events", tuple(missing_event_evidence)
+        )
+    cyclic = _cyclic_edge_indices(report)
+    if cyclic:
+        raise MainRcaValidationError(
+            "causal_chain must be acyclic: an effect cannot lead back to its own cause",
+            tuple(_issue("cyclic_causal_chain", f"causal_chain.{index}") for index in cyclic),
         )
     components = {item.component_id for item in request.incident.affected_components}
     if report.root_cause_component.component_id not in components:
