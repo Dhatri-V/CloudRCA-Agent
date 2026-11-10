@@ -165,7 +165,7 @@ def test_pipeline_sends_only_database_and_vm_records_to_specialists(scripted_jco
     assert database_prompt_ids == {events["err-1001-a"]}
     assert vm_prompt_ids == {events["metric-cpu-1000"], events["hb-1000"]}
     [rca_input] = transport.prompts["main_rca"]
-    assert {events["summary-1001"], events["err-1001-b"]} <= {item["reference_id"] for item in rca_input["incident"]["source_events"]}
+    assert {events["summary-1001"], events["err-1001-b"]} <= {item["event_id"] for item in rca_input["events"]}
 
 
 def test_pool_snapshots_are_application_evidence_and_never_vm_heartbeats(tmp_path: Path) -> None:

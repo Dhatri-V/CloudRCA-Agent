@@ -121,21 +121,39 @@ def _event_ref(node_id: str) -> str:
     return node_id.removeprefix("event:")
 
 
-def _compact_graph(graph: CorrelationGraph) -> dict[str, object]:
-    """Candidate edges between event IDs; each edge's evidence is exactly its two endpoint events."""
+MAX_PROMPT_EDGES = 40
+EDGE_TYPE_MEANINGS = {
+    "topology_candidate": "events within the UTC window on components joined by an observed topology relationship (see topology)",
+    "temporal_candidate": "events within the UTC window that share a component identifier",
+    "weak_temporal_candidate": "events within the UTC window with only weak shared context",
+}
+
+
+def _compact_graph(graph: CorrelationGraph, max_edges: int = MAX_PROMPT_EDGES, *, include_nodes: bool = True) -> dict[str, object]:
+    """The highest-scoring candidate edges, with counts for any omitted.
+
+    Events on one instance share identifiers, so the graph grows quadratically with incident size; listing every
+    pair would crowd out the evidence itself. Omitted edges stay valid citations (validation uses the full graph).
+    """
+    ranked = sorted(graph.edges, key=lambda edge: (-edge.score, edge.source_id, edge.target_id))
+    listed = ranked[:max_edges]
+    by_type: dict[str, int] = {}
+    for edge in graph.edges:
+        by_type[edge.edge_type.value] = by_type.get(edge.edge_type.value, 0) + 1
     return {
         "incident_id": graph.incident_id,
-        "nodes": [item.model_dump(mode="json", exclude={"provenance", "schema_version", "node_id"}) for item in graph.nodes],
+        # Nodes repeat each event's ID, layer, and time; they are omitted when INPUT.events lists the events.
+        **({"nodes": [item.model_dump(mode="json", exclude={"provenance", "schema_version", "node_id"}) for item in graph.nodes]} if include_nodes else {}),
+        "edge_summary": {
+            "edge_count": len(graph.edges),
+            "listed": len(listed),
+            "omitted": len(graph.edges) - len(listed),
+            "by_type": dict(sorted(by_type.items())),
+            "type_meanings": {name: EDGE_TYPE_MEANINGS[name] for name in sorted(by_type) if name in EDGE_TYPE_MEANINGS},
+        },
         "edges": [
-            {
-                "source": _event_ref(edge.source_id),
-                "target": _event_ref(edge.target_id),
-                "type": edge.edge_type.value,
-                "score": round(edge.score, 3),
-                "basis": edge.rationale[-1],
-                **({"topology_relationship_ids": list(edge.topology_relationship_ids)} if edge.topology_relationship_ids else {}),
-            }
-            for edge in graph.edges
+            {"source": _event_ref(edge.source_id), "target": _event_ref(edge.target_id), "type": edge.edge_type.value, "score": round(edge.score, 3)}
+            for edge in listed
         ],
     }
 
@@ -143,7 +161,17 @@ def _compact_graph(graph: CorrelationGraph) -> dict[str, object]:
 def _compact_event(event: NormalizedEvent) -> dict[str, object]:
     """One event's facts once: identifiers, message, timing, and provenance, without the raw source record."""
     ids = {name: getattr(event, name) for name in ("service", "host_id", "vm_id", "pod_id", "database_id") if getattr(event, name)}
-    return {
+    attributes = event.metadata.get("source_attributes") or {}
+    # Attributes already stated in the message as key=value add nothing; every other attribute is kept.
+    extra = {
+        key: value
+        for key, value in (attributes.items() if isinstance(attributes, dict) else ())
+        if not (isinstance(value, (int, float)) and not isinstance(value, bool) and f"{key}={value:g}" in event.message)
+    }
+    provenance: dict[str, object] = {"kind": event.provenance.kind.value, "record_id": event.provenance.record_id}
+    if event.provenance.source != event.source:
+        provenance["source"] = event.provenance.source
+    compact: dict[str, object] = {
         "event_id": event.event_id,
         "timestamp": event.timestamp.isoformat().replace("+00:00", "Z"),
         "layer": event.layer.value,
@@ -152,9 +180,11 @@ def _compact_event(event: NormalizedEvent) -> dict[str, object]:
         "message": event.message,
         **ids,
         "record_kind": event.metadata.get("record_kind"),
-        "source_attributes": event.metadata.get("source_attributes") or {},
-        "provenance": {"kind": event.provenance.kind.value, "source": event.provenance.source, "record_id": event.provenance.record_id},
+        "provenance": provenance,
     }
+    if extra:
+        compact["source_attributes"] = extra
+    return compact
 
 
 def _compact_incident(request: MainRcaRequest) -> dict[str, object]:
@@ -171,9 +201,9 @@ def _compact_incident(request: MainRcaRequest) -> dict[str, object]:
         for reason, count in pairs.items()
     ]
     if request.events:
-        incident["source_events"] = [
-            {"evidence_id": item.evidence_id, "kind": item.kind.value, "reference_id": item.reference_id} for item in request.incident.source_events
-        ]
+        # Every source event is listed once in INPUT.events; repeating its ID here would scale the prompt for nothing.
+        incident.pop("source_events")
+        incident["event_count"] = len(request.incident.source_events)
     return incident
 
 
@@ -261,7 +291,7 @@ def build_main_rca_prompt(request: MainRcaRequest, prompt_version: str) -> str:
     payload = {
         "incident": _compact_incident(request),
         "events": [_compact_event(item) for item in sorted(request.events, key=lambda item: (item.timestamp, item.event_id))],
-        "correlation_graph": _compact_graph(request.graph),
+        "correlation_graph": _compact_graph(request.graph, include_nodes=not request.events),
         "specialist_workflow": _compact_workflow(request.workflow) if request.workflow else None,
         "topology": _compact_topology(request.topology),
         "telemetry_coverage": telemetry_coverage(request),
@@ -272,9 +302,10 @@ def build_main_rca_prompt(request: MainRcaRequest, prompt_version: str) -> str:
     }
     return "\n".join((
         f"CLOUDRCA_MAIN_RCA_PROMPT_VERSION={prompt_version}",
-        "Correlation edges are candidates only; make causal claims only when cited evidence supports them.",
-        "Event details are in events (or incident.source_events provenance when events is empty); incident, graph "
-        "nodes, edges, and topology reference events by ID.",
+        "Correlation edges are candidates only; make causal claims only when cited evidence supports them. "
+        "correlation_graph.edges lists the highest-scoring candidates; edge_summary counts any omitted.",
+        "Event details are in events (or incident.source_events provenance when events is empty); graph edges and "
+        "topology reference events by ID.",
         "topology lists observed structure (what runs on or depends on what) with its supporting evidence; it is not "
         "evidence that one component caused another's failure. topology.unavailable lists relationships that cannot be observed.",
         *REASONING_RULES,
