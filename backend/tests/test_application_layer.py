@@ -64,7 +64,8 @@ def test_application_evidence_reaches_main_rca_but_never_a_specialist(
     specialist_event_ids = {item["event_id"] for stage in ("database", "vm", "hypervisor") for prompt in transport.prompts[stage] for item in prompt["events"]}
     assert specialist_event_ids == {"db-locked", "vm-cpu"}
     [rca_input] = transport.prompts["main_rca"]
-    assert "app-500" in {item["reference_id"] for item in rca_input["incident"]["source_events"]}
+    assert "app-500" in {item["event_id"] for item in rca_input["events"]}
+    assert rca_input["incident"]["event_count"] == 3
     components = {(item["component_id"], item["layer"]) for item in rca_input["incident"]["affected_components"]}
     assert ("splitwise-api", "application") in components
 
