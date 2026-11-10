@@ -67,7 +67,7 @@ def test_telemetry_coverage_reports_present_absent_and_unobservable_layers() -> 
     assert {name for name, item in layers.items() if item["has_evidence"]} == {"application", "database", "vm_guest_os"}
     assert layers["host_hypervisor"] == {"has_evidence": False, "event_count": 0, "specialist": "A3", "specialist_status": "not_run"}
     assert layers["application"]["specialist"] == "none (evidence only)"
-    assert (layers["application"]["event_count"], layers["database"]["event_count"], layers["vm_guest_os"]["event_count"]) == (2, 1, 2)
+    assert (layers["application"]["event_count"], layers["database"]["event_count"], layers["vm_guest_os"]["event_count"]) == (3, 1, 2)  # application: summary, error, pool snapshot
     assert any(AWS_HOST_UNAVAILABLE in item for item in coverage["unavailable"])
 
 

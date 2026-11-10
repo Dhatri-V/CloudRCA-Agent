@@ -19,7 +19,7 @@ One JSON object per line with `event`, a timezone-aware `ts`, `service`, and `in
 | `error` | `reported_by` (`application` or `database`, required), `error_class`, `message`, `request_id`, `method`, `route`, `status`, `database_id` (required when `reported_by=database`), `operation`, `duration_ms`, `db_wait_ms` |
 | `heartbeat` | `load_1m`, `load_5m`, `cpu_count`, `mem_available_mb`, `mem_total_mb`, `disk_free_mb`, `disk_total_mb`, `db_pool_size`, `db_pool_checked_out`, `db_pool_overflow` |
 
-`db_pool_size`, `db_pool_checked_out`, and `db_pool_overflow` are optional non-negative integer snapshots emitted by Splitwise R6: the configured SQLAlchemy pool capacity, currently checked-out connections, and connections opened above that base capacity. The R6 logger clamps overflow to zero when SQLAlchemy reports a negative internal value.
+`db_pool_size`, `db_pool_checked_out`, and `db_pool_overflow` are optional non-negative integer snapshots emitted by Splitwise R6 (pool capacity, checked-out connections, and connections opened above capacity; R6 clamps overflow to zero). The SQLAlchemy pool lives inside the application process, so the converter splits each heartbeat line: VM/OS measures become a `host.heartbeat` record (VM layer, A2) and the pool counts become an `app.pool_snapshot` record (application layer, with the line's `service` and `instance_id`). Pool counts on a line without `service` are skipped and reported, never attributed.
 
 Logs must not contain request bodies, SQL parameters, credentials, or personal data (titles, amounts, names). The converter copies only the fields above, so anything else is dropped even if logged by mistake.
 

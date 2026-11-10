@@ -376,7 +376,7 @@ def _synthetic_host_placement(event: NormalizedEvent, augmentation: TopologyAugm
     )
 
 
-CLOUDRCA_RECORD_KINDS = frozenset({"app.request_summary", "app.error", "host.heartbeat", "aws.cloudwatch.metric"})
+CLOUDRCA_RECORD_KINDS = frozenset({"app.request_summary", "app.error", "app.pool_snapshot", "host.heartbeat", "aws.cloudwatch.metric"})
 AWS_HOST_UNAVAILABLE = "AWS does not expose the physical host or hypervisor placement of an EC2 instance."
 
 
