@@ -26,8 +26,8 @@ WINDOW = ["--start", "2026-10-30T09:45:00Z", "--end", "2026-10-30T10:10:00Z"]
 class ScriptedAws:
     """Answers the read-only calls with canned JSON and serves the fixture log for scp."""
 
-    def __init__(self, credits: str = "standard") -> None:
-        self.credits = credits
+    def __init__(self, credits: str = "standard", cpu_status: str = "Complete") -> None:
+        self.credits, self.cpu_status = credits, cpu_status
         self.calls: list[list[str]] = []
 
     def __call__(self, command: Sequence[str]) -> str:
@@ -49,7 +49,7 @@ class ScriptedAws:
             return json.dumps({"InstanceCreditSpecifications": [{"InstanceId": INSTANCE, "CpuCredits": self.credits}]})
         if operation == ("cloudwatch", "get-metric-data"):
             return json.dumps({"MetricDataResults": [
-                {"Id": "cpu", "Timestamps": ["2026-10-30T10:00:00Z", "2026-10-30T09:55:00Z"], "Values": [92.5, 18.0]},
+                {"Id": "cpu", "Timestamps": ["2026-10-30T10:00:00Z", "2026-10-30T09:55:00Z"], "Values": [92.5, 18.0], "StatusCode": self.cpu_status},
                 {"Id": "credit_balance", "Timestamps": ["2026-10-30T10:00:00Z"], "Values": [0.0]},
                 {"Id": "status_system", "Timestamps": [], "Values": []},
             ]})
@@ -158,3 +158,29 @@ def test_the_metric_template_is_instance_scoped_with_one_statistic_per_metric() 
         stat = query["MetricStat"]
         assert stat["Metric"]["Namespace"] == "AWS/EC2" and stat["Period"] == 300  # free basic monitoring granularity
         assert stat["Metric"]["Dimensions"] == [{"Name": "InstanceId", "Value": "${INSTANCE_ID}"}]
+
+
+@pytest.mark.parametrize("status", ["InternalError", "PartialData", "Forbidden"])
+def test_incomplete_metric_results_stop_the_collection_without_a_dataset(tmp_path: Path, status: str) -> None:
+    aws = ScriptedAws(cpu_status=status)
+    out = tmp_path / "collection"
+    with pytest.raises(SystemExit, match=f"incomplete results {{'cpu': '{status}'}}"):
+        main(["--instance-id", INSTANCE, "--region", "us-east-1", *WINDOW, "--out-dir", str(out), "--ssh-host", "splitwise-ec2"], aws)
+    assert not (out / "incident.jsonl").exists() and not (out / "manifest.json").exists()
+    assert ("scp", "") not in aws.operations()
+
+
+def test_an_existing_collection_is_never_overwritten(tmp_path: Path) -> None:
+    out = collect(tmp_path, ScriptedAws(), "--ssh-host", "splitwise-ec2")
+    before = {path.name: path.read_bytes() for path in out.iterdir()}
+    aws = ScriptedAws()
+    with pytest.raises(SystemExit, match="not empty"):
+        main(["--instance-id", INSTANCE, "--region", "us-east-1", *WINDOW, "--out-dir", str(out), "--ssh-host", "splitwise-ec2"], aws)
+    assert {path.name: path.read_bytes() for path in out.iterdir()} == before
+    assert ("cloudwatch", "get-metric-data") not in aws.operations()
+
+
+def test_the_example_unit_creates_its_log_directory_and_stays_on_localhost() -> None:
+    unit = (ROOT / "config" / "aws" / "splitwise.service.example").read_text()
+    assert "LogsDirectory=splitwise" in unit and "SPLITWISE_LOG_FILE=/var/log/splitwise/app.jsonl" in unit
+    assert "--host 127.0.0.1" in unit and "0.0.0.0" not in unit

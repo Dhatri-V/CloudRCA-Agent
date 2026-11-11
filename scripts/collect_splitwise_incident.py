@@ -10,6 +10,8 @@ Runs only these read-only commands, through the AWS CLI and scp you already have
 
 Then it runs scripts/convert_cloudwatch_export.py on the window and writes, under --out-dir:
   instance.json, metric_queries.json, metric_data.json, app.jsonl, incident.jsonl (upload this), manifest.json
+--out-dir must be new or empty; manifest.json is written last, so a directory without it is an incomplete collection.
+app.jsonl is the raw log copy (the whole file, not only the window): keep it private and delete it when done.
 
   --check   only confirm the identity and describe the instance; nothing is copied or converted
 
@@ -152,6 +154,8 @@ def collect(args: argparse.Namespace, runner: Runner = run_command) -> dict[str,
         raise SystemExit("--remote-log must be an absolute path of plain characters.")
 
     out = args.out_dir
+    if out.exists() and (not out.is_dir() or any(out.iterdir())):
+        raise SystemExit(f"--out-dir {out} already exists and is not empty; choose a new directory so collections never mix.")
     out.mkdir(parents=True, exist_ok=True)
     (out / "instance.json").write_text(json.dumps(instance, indent=2, default=str) + "\n", encoding="utf-8")
     queries_path, data_path, log_path, dataset = out / "metric_queries.json", out / "metric_data.json", out / "app.jsonl", out / "incident.jsonl"
@@ -160,6 +164,13 @@ def collect(args: argparse.Namespace, runner: Runner = run_command) -> dict[str,
         "cloudwatch", "get-metric-data", "--metric-data-queries", f"file://{queries_path}",
         "--start-time", convert_cloudwatch_export.iso(start), "--end-time", convert_cloudwatch_export.iso(end),
     )
+    # A successful call can still carry failed or partial results; never convert an incomplete metric set.
+    incomplete = {
+        str(item.get("Id")): str(item.get("StatusCode"))
+        for item in metric_data.get("MetricDataResults", []) if item.get("StatusCode", "Complete") != "Complete"
+    }
+    if incomplete:
+        raise SystemExit(f"get-metric-data returned incomplete results {incomplete}; no dataset was written. Retry the collection.")
     data_path.write_text(json.dumps(metric_data, indent=2) + "\n", encoding="utf-8")
     if args.ssh_host:
         collector.scp(args.ssh_host, args.remote_log, log_path)

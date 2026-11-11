@@ -9,6 +9,9 @@ Wants=network-online.target
 [Service]
 User=ec2-user
 WorkingDirectory=/home/ec2-user/splitwise-backend
+# systemd creates /var/log/splitwise owned by User, so the app can write its log there.
+LogsDirectory=splitwise
+LogsDirectoryMode=0750
 Environment=SPLITWISE_LOG_FILE=/var/log/splitwise/app.jsonl
 Environment=SPLITWISE_HEARTBEAT_SECONDS=60
 Environment=SPLITWISE_SERVICE_NAME=splitwise-api

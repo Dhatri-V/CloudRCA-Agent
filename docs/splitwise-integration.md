@@ -45,6 +45,8 @@ It then copies the log with `scp`, runs the converter, and writes everything to 
   --start 2026-11-12T09:40:00Z --end 2026-11-12T10:10:00Z --ssh-host splitwise-ec2
 ```
 
+Each run needs a new or empty `--out-dir`. `manifest.json` is written last, so a directory without one is an incomplete collection. The run also stops, without writing a dataset, if any CloudWatch result's `StatusCode` is not `Complete`. `app.jsonl` is the raw log copy: the whole file, including lines outside the window, with any fields the converter would drop. Keep collections private and delete them when the analysis is done.
+
 Use `--app-log` instead of `--ssh-host` for a log you already copied, and `--profile` for a named or SSO profile. Supporting files are in `config/aws/`:
 
 | File | Purpose |
