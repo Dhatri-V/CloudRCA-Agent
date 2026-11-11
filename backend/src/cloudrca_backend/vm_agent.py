@@ -22,11 +22,12 @@ from .contracts import (
 )
 from .routing import RoutedEvent, RoutingLayer
 from .specialist_runtime import (
+    SPECIALIST_INPUT_GUIDE,
     SpecialistRequest,
     SpecialistRuntime,
     SpecialistStructuredRunResult,
     finding_contract_lines,
-    specialist_event_context,
+    specialist_input,
 )
 
 
@@ -146,10 +147,7 @@ class VMAgentInputError(ValueError):
 
 def build_vm_prompt(request: SpecialistRequest, prompt_version: str) -> str:
     """Build the deterministic A2 prompt using Issue #7's safe event context."""
-    payload = {
-        "specialist_layer": Layer.VM.value,
-        "events": [specialist_event_context(item) for item in request.events],
-    }
+    payload = specialist_input(request)
     instructions = (
         f"CLOUDRCA_VM_PROMPT_VERSION={prompt_version}",
         "You are A2, the VM and guest operating-system specialist. Analyze only these VM-routed events.",
@@ -164,6 +162,7 @@ def build_vm_prompt(request: SpecialistRequest, prompt_version: str) -> str:
         *finding_contract_lines(VMFinding, EXAMPLE_VM_FINDING),
         "Return exactly one JSON object that validates against VM_ANALYSIS_SCHEMA.",
         f"VM_ANALYSIS_SCHEMA={json.dumps(VMAnalysis.model_json_schema(mode='validation'), sort_keys=True, separators=(',', ':'))}",
+        SPECIALIST_INPUT_GUIDE,
         f"INPUT={json.dumps(payload, sort_keys=True, separators=(',', ':'))}",
     )
     return "\n".join(instructions)

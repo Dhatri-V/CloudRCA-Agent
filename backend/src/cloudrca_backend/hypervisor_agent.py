@@ -23,11 +23,12 @@ from .contracts import (
 )
 from .routing import RoutedEvent, RoutingLayer
 from .specialist_runtime import (
+    SPECIALIST_INPUT_GUIDE,
     SpecialistRequest,
     SpecialistRuntime,
     SpecialistStructuredRunResult,
     finding_contract_lines,
-    specialist_event_context,
+    specialist_input,
 )
 
 
@@ -165,10 +166,7 @@ class HypervisorAgentInputError(ValueError):
 
 def build_hypervisor_prompt(request: SpecialistRequest, prompt_version: str) -> str:
     """Build the deterministic A3 prompt using Issue #7's safe event context."""
-    payload = {
-        "specialist_layer": Layer.HYPERVISOR.value,
-        "events": [specialist_event_context(item) for item in request.events],
-    }
+    payload = specialist_input(request)
     instructions = (
         f"CLOUDRCA_HYPERVISOR_PROMPT_VERSION={prompt_version}",
         "You are A3, the host and hypervisor specialist. Analyze only these host_hypervisor-routed events.",
@@ -186,6 +184,7 @@ def build_hypervisor_prompt(request: SpecialistRequest, prompt_version: str) -> 
         *finding_contract_lines(HypervisorFinding, EXAMPLE_HYPERVISOR_FINDING),
         "Return exactly one JSON object that validates against HYPERVISOR_ANALYSIS_SCHEMA.",
         f"HYPERVISOR_ANALYSIS_SCHEMA={json.dumps(HypervisorAnalysis.model_json_schema(mode='validation'), sort_keys=True, separators=(',', ':'))}",
+        SPECIALIST_INPUT_GUIDE,
         f"INPUT={json.dumps(payload, sort_keys=True, separators=(',', ':'))}",
     )
     return "\n".join(instructions)

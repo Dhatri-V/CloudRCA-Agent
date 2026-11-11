@@ -20,7 +20,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from cloudrca_compatibility.jcode_smoke import ProviderSpec, SmokeError, configure_provider
 
+from .anomaly_signals import anomaly_signals
 from .contracts import Finding, Layer
+from .event_summary import summarize_events
 from .routing import RoutedEvent, RoutingLayer
 from .settings import Settings, SettingsError
 
@@ -244,6 +246,83 @@ def specialist_event_context(routed: RoutedEvent) -> dict[str, Any]:
     }
 
 
+SPECIALIST_SIGNAL_LIMIT = 30
+SPECIALIST_SUMMARY_NOTE = (
+    "Events are in time order. Each distinct warning/error, events carrying an anomaly signal (first and last of "
+    "repeats), and each series' endpoints are listed in events; every other event is in event_series with its "
+    "values and UTC time. Cite the series' first/last/min/max event IDs when relying on a series."
+)
+SPECIALIST_INPUT_GUIDE = (
+    "INPUT.events are in time order; INPUT.context lists each routing rule and topology entry once for all events. "
+    "For larger batches, event_summary and event_series condense routine records: every value is kept with its UTC "
+    "time (offsets_s from first.timestamp; constant states unchanging measures once). INPUT.anomaly_signals, when "
+    "present, lists deterministic threshold checks on the events (observed values, not causes)."
+)
+
+
+def _compact_specialist_event(routed: RoutedEvent) -> dict[str, Any]:
+    """Per-event facts only; routing explanations and topology are listed once in the payload context."""
+    event = routed.event
+    compact: dict[str, Any] = {
+        "event_id": event.event_id,
+        "timestamp": event.timestamp.isoformat().replace("+00:00", "Z"),
+        "source": event.source,
+        "service": event.service,
+        "severity": event.severity.value,
+        "message": event.message,
+        "component_ids": {"host_id": event.host_id, "vm_id": event.vm_id, "pod_id": event.pod_id, "database_id": event.database_id},
+        "record_id": event.provenance.record_id,
+        "routing": {"layer": routed.routing.layer.value, "confidence": routed.routing.confidence},
+    }
+    if routed.topology.relationships:
+        compact["relationship_ids"] = [item.relationship_id for item in routed.topology.relationships]
+    return compact
+
+
+def specialist_input(request: SpecialistRequest) -> dict[str, Any]:
+    """Bounded, evidence-preserving specialist INPUT shared by A1, A2, and A3.
+
+    Repeated per-event context (routing explanations, topology) is listed once. Above the verbatim limit, routine
+    records become value series (summarize_events), while warnings/errors and events carrying a deterministic anomaly
+    signal stay verbatim (first and last occurrences of repeats). Validation still accepts every supplied event ID.
+    """
+    events = [item.event for item in request.events]
+    by_id = {item.event.event_id: item for item in request.events}
+    found = anomaly_signals(events)
+    first_check: dict[str, str] = {}
+    for signal in found:
+        first_check.setdefault(signal.event_id, signal.check)
+    summarized = summarize_events(events, signals=first_check, note=SPECIALIST_SUMMARY_NOTE)
+    rules: dict[tuple[str, float], int] = {}
+    relationships: dict[str, Any] = {}
+    unavailable: dict[str, Any] = {}
+    for item in request.events:
+        rule = (item.routing.explanation, item.routing.confidence)
+        rules[rule] = rules.get(rule, 0) + 1
+        for relationship in item.topology.relationships:
+            relationships.setdefault(relationship.relationship_id, _without_schema_version(relationship.model_dump(mode="json")))
+        for gap in item.topology.unavailable:
+            dumped = _without_schema_version(gap.model_dump(mode="json"))
+            unavailable.setdefault(json.dumps(dumped, sort_keys=True), dumped)
+    payload: dict[str, Any] = {
+        "specialist_layer": request.layer.value,
+        "events": [_compact_specialist_event(by_id[event.event_id]) for event in summarized.verbatim],
+        "context": {
+            "routing_rules": [
+                {"explanation": explanation, "confidence": confidence, "event_count": count}
+                for (explanation, confidence), count in rules.items()
+            ],
+            "topology": {"relationships": list(relationships.values()), "unavailable": list(unavailable.values())},
+        },
+    }
+    if found:
+        payload["anomaly_signals"] = {"count": len(found), "signals": [signal.as_dict() for signal in found[:SPECIALIST_SIGNAL_LIMIT]]}
+    if summarized.summary:
+        payload["event_series"] = summarized.series
+        payload["event_summary"] = summarized.summary
+    return payload
+
+
 def _without_schema_version(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _without_schema_version(item) for key, item in value.items() if key != "schema_version"}
@@ -270,14 +349,12 @@ def finding_contract_lines(finding_model: type[BaseModel], example: BaseModel) -
 
 def build_specialist_prompt(request: SpecialistRequest, prompt_version: str) -> str:
     """Build a stable prompt without including raw source records or secrets."""
-    payload = {
-        "specialist_layer": request.layer.value,
-        "events": [specialist_event_context(item) for item in request.events],
-    }
+    payload = specialist_input(request)
     schema = Finding.model_json_schema(mode="validation")
     sections = (
         f"CLOUDRCA_SPECIALIST_PROMPT_VERSION={prompt_version}",
         "Analyze only the supplied specialist layer. Do not invent evidence.",
+        SPECIALIST_INPUT_GUIDE,
         "Return exactly one JSON object that validates against FINDING_SCHEMA.",
         f"FINDING_SCHEMA={json.dumps(schema, sort_keys=True, separators=(',', ':'))}",
         f"INPUT={json.dumps(payload, sort_keys=True, separators=(',', ':'))}",
