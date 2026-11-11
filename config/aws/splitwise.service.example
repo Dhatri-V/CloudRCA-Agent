@@ -1,6 +1,6 @@
 # systemd unit for splitwise-backend on EC2 (example; copy to /etc/systemd/system/splitwise.service and adjust paths).
 # The app writes CloudRCA JSON lines to SPLITWISE_LOG_FILE; scripts/collect_splitwise_incident.py copies that file.
-# Binds to localhost only: reach it through an SSH tunnel (ssh -L 8000:127.0.0.1:8000 splitwise-ec2), not a public port.
+# Uses the checkout's existing .venv (python -m venv .venv). Binds to localhost only: reach it through an SSH tunnel (ssh -L 8000:127.0.0.1:8000 splitwise-ec2), not a public port.
 [Unit]
 Description=Splitwise API (uvicorn)
 After=network-online.target
@@ -16,7 +16,7 @@ Environment=SPLITWISE_LOG_FILE=/var/log/splitwise/app.jsonl
 Environment=SPLITWISE_HEARTBEAT_SECONDS=60
 Environment=SPLITWISE_SERVICE_NAME=splitwise-api
 Environment=SPLITWISE_DATABASE_ID=splitwise-sqlite
-ExecStart=/home/ec2-user/splitwise-backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+ExecStart=/home/ec2-user/splitwise-backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 
 [Install]
