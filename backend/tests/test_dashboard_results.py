@@ -67,8 +67,8 @@ def test_incident_evidence_is_scoped_to_its_job_and_incident() -> None:
     assert scoped.report is not None and scoped.report.artifact_id == "a-report"
     assert job_run_summary(artifacts) == {"normalization": {"accepted": 1}}
     assert job_run_summary([]) == {}
-    assert [outcome_tone(item) for item in ("rca_reported", "insufficient_evidence", "rca_failed", "not_analyzed")] == [
-        "success", "info", "error", "error",
+    assert [outcome_tone(item) for item in ("rca_reported", "no_anomaly_detected", "insufficient_evidence", "rca_failed", "not_analyzed")] == [
+        "success", "success", "info", "error", "error",
     ]
 
 

@@ -219,4 +219,4 @@ def job_run_summary(job_artifacts: Sequence[Artifact]) -> dict[str, object]:
 
 def outcome_tone(outcome: str) -> str:
     """Map pipeline analysis outcomes to Streamlit tones; failures are never shown as success."""
-    return {"rca_reported": "success", "insufficient_evidence": "info"}.get(outcome, "error")
+    return {"rca_reported": "success", "no_anomaly_detected": "success", "insufficient_evidence": "info"}.get(outcome, "error")
