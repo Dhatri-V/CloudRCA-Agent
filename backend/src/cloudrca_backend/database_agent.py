@@ -21,11 +21,12 @@ from .contracts import (
 )
 from .routing import RoutedEvent, RoutingLayer
 from .specialist_runtime import (
+    SPECIALIST_INPUT_GUIDE,
     SpecialistRequest,
     SpecialistRuntime,
     SpecialistStructuredRunResult,
     finding_contract_lines,
-    specialist_event_context,
+    specialist_input,
 )
 
 
@@ -106,10 +107,7 @@ class DatabaseAgentInputError(ValueError):
 
 def build_database_prompt(request: SpecialistRequest, prompt_version: str) -> str:
     """Build the deterministic A1 prompt using Issue #7's safe event context."""
-    payload = {
-        "specialist_layer": Layer.DATABASE.value,
-        "events": [specialist_event_context(item) for item in request.events],
-    }
+    payload = specialist_input(request)
     instructions = (
         f"CLOUDRCA_DATABASE_PROMPT_VERSION={prompt_version}",
         "You are A1, the database specialist. Analyze only these database-routed events.",
@@ -124,6 +122,7 @@ def build_database_prompt(request: SpecialistRequest, prompt_version: str) -> st
         *finding_contract_lines(DatabaseFinding, EXAMPLE_DATABASE_FINDING),
         "Return exactly one JSON object that validates against DATABASE_ANALYSIS_SCHEMA.",
         f"DATABASE_ANALYSIS_SCHEMA={json.dumps(DatabaseAnalysis.model_json_schema(mode='validation'), sort_keys=True, separators=(',', ':'))}",
+        SPECIALIST_INPUT_GUIDE,
         f"INPUT={json.dumps(payload, sort_keys=True, separators=(',', ':'))}",
     )
     return "\n".join(instructions)

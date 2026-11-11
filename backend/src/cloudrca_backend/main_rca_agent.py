@@ -11,8 +11,12 @@ from uuid import uuid4
 import structlog
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .contracts import Layer, ModelRuntimeProvenance, NormalizedEvent, RCAReport, Severity
+from .contracts import Layer, ModelRuntimeProvenance, NormalizedEvent, RCAReport
 from .correlation import CorrelationGraph
+from .event_summary import NOTABLE_HEAD as NOTABLE_HEAD  # re-exported for existing callers
+from .event_summary import NOTABLE_TAIL as NOTABLE_TAIL
+from .event_summary import VERBATIM_EVENT_LIMIT as VERBATIM_EVENT_LIMIT
+from .event_summary import cited_event_ids, summarize_events
 from .incident_grouping import CandidateIncident
 from .knowledge import RetrievedChunk
 from .orchestration import SpecialistWorkflowResult, WorkflowStatus
@@ -187,121 +191,11 @@ def _compact_event(event: NormalizedEvent) -> dict[str, object]:
     return compact
 
 
-VERBATIM_EVENT_LIMIT = 40
-NOTABLE_HEAD, NOTABLE_TAIL = 3, 2  # occurrences of one repeated warning/error kept verbatim at each end
-_NOTABLE_SEVERITIES = frozenset({Severity.WARNING, Severity.ERROR, Severity.CRITICAL})
-
-
-def _cited_event_ids(value: object) -> set[str]:
-    """Event IDs cited anywhere inside specialist finding payloads (evidence_event_ids lists)."""
-    if isinstance(value, dict):
-        found = {item for item in value.get("evidence_event_ids", []) if isinstance(item, str)} if isinstance(value.get("evidence_event_ids"), list) else set()
-        return found.union(*(_cited_event_ids(item) for item in value.values()))
-    if isinstance(value, list):
-        return set().union(*(_cited_event_ids(item) for item in value))
-    return set()
-
-
-def _measures(event: NormalizedEvent) -> dict[str, float]:
-    attributes = event.metadata.get("source_attributes")
-    if not isinstance(attributes, dict):
-        return {}
-    return {key: float(value) for key, value in attributes.items() if isinstance(value, (int, float)) and not isinstance(value, bool)}
-
-
-def _compact_number(value: float) -> float | int:
-    """Lossless and compact: integral values print without a trailing .0."""
-    return int(value) if float(value).is_integer() else round(value, 3)
-
-
-def _series_key(event: NormalizedEvent) -> tuple[str, ...]:
-    attributes = event.metadata.get("source_attributes")
-    metric = attributes.get("metric_name") if isinstance(attributes, dict) else None
-    ids = tuple(getattr(event, name) or "" for name in ("service", "vm_id", "pod_id", "database_id", "host_id"))
-    return (str(event.metadata.get("record_kind") or event.source), event.layer.value, str(metric or ""), *ids)
-
-
 def _summarize_events(request: MainRcaRequest) -> tuple[list[dict[str, object]], list[dict[str, object]], dict[str, object]]:
-    """Large incidents: distinct warnings/errors stay verbatim; repeats and routine records become value series.
-
-    Every condensed value is kept with its UTC time, and each series names real event IDs (first, last, and the
-    minimum and maximum of each measure) so conclusions stay citeable. Validation still accepts any supplied event.
-    """
-    ordered = sorted(request.events, key=lambda item: (item.timestamp, item.event_id))
-    if len(ordered) <= VERBATIM_EVENT_LIMIT:
-        return [_compact_event(item) for item in ordered], [], {}
-    cited = set().union(*(_cited_event_ids(item.finding) for item in request.incident.findings)) if request.incident.findings else set()
-    groups: dict[tuple[str, ...], list[NormalizedEvent]] = {}
-    notable: dict[tuple[str, ...], list[NormalizedEvent]] = {}
-    verbatim: dict[str, NormalizedEvent] = {}
-    for event in ordered:
-        if event.severity in _NOTABLE_SEVERITIES or event.metadata.get("record_kind") == "app.error":
-            notable.setdefault((*_series_key(event), event.severity.value, event.message), []).append(event)
-        else:
-            groups.setdefault(_series_key(event), []).append(event)
-    # A repeated warning/error (same kind, component, severity, and message) keeps its first and last occurrences
-    # verbatim; the occurrences in between join a series that keeps each one's time and numeric fields.
-    for key, members in notable.items():
-        for event in members[:NOTABLE_HEAD] + members[-NOTABLE_TAIL:]:
-            verbatim[event.event_id] = event
-        if len(members) > NOTABLE_HEAD + NOTABLE_TAIL:
-            groups.setdefault(key, []).extend(members[NOTABLE_HEAD:-NOTABLE_TAIL])
-    series: list[dict[str, object]] = []
-    for key, members in groups.items():
-        repeated_notable = len(key) > len(_series_key(members[0]))
-        if not repeated_notable:  # routine series endpoints stay verbatim for context (notable head/tail already are)
-            for endpoint in (members[0], members[-1]):
-                verbatim[endpoint.event_id] = endpoint
-        inner = [event for event in members if event.event_id not in verbatim]
-        if not inner:
-            continue
-        sample = inner[0]
-        entry: dict[str, object] = {
-            "record_kind": key[0], "layer": key[1], **({"metric_name": key[2]} if key[2] else {}),
-            **({"severity": key[-2], "message": key[-1], "repeated_notable": True} if repeated_notable else {}),
-            **{name: getattr(sample, name) for name in ("service", "vm_id", "pod_id", "database_id", "host_id") if getattr(sample, name)},
-            "count": len(inner),
-            # Specialist-cited events inside a series keep their ID, indexed into offsets_s/values, so they stay citeable.
-            **({"cited_event_ids": {event.event_id: index for index, event in enumerate(inner) if event.event_id in cited}}
-               if any(event.event_id in cited for event in inner) else {}),
-            "first": {"timestamp": inner[0].timestamp.isoformat().replace("+00:00", "Z"), "event_id": inner[0].event_id},
-            "last": {"timestamp": inner[-1].timestamp.isoformat().replace("+00:00", "Z"), "event_id": inner[-1].event_id},
-        }
-        # Times are whole-second offsets (milliseconds kept when present) from first.timestamp.
-        entry["offsets_s"] = [_compact_number((event.timestamp - inner[0].timestamp).total_seconds()) for event in inner]
-        names = sorted({name for event in inner for name in _measures(event)})
-        if names:
-            columns = {name: [_measures(event).get(name) for event in inner] for name in names}
-            # A measure with one value throughout is stated once; every other measure keeps one value per event.
-            constant = {name: _compact_number(column[0]) for name, column in columns.items() if column[0] is not None and len(set(column)) == 1}
-            entry["values"] = {name: [None if value is None else _compact_number(value) for value in column] for name, column in columns.items() if name not in constant}
-            if constant:
-                entry["constant"] = constant
-            extremes: dict[str, dict[str, str]] = {}
-            for name in names:
-                present = [event for event in inner if name in _measures(event)]
-                if present and name not in constant:
-                    extremes[name] = {
-                        "min_event_id": min(present, key=lambda event: _measures(event)[name]).event_id,
-                        "max_event_id": max(present, key=lambda event: _measures(event)[name]).event_id,
-                    }
-            entry["extremes"] = extremes
-        else:
-            messages: dict[str, int] = {}
-            for event in inner:
-                messages[event.message] = messages.get(event.message, 0) + 1
-            entry["messages"] = dict(sorted(messages.items(), key=lambda item: -item[1])[:5])
-            entry["distinct_messages"] = len(messages)
-        series.append(entry)
-    condensed = sum(int(str(item["count"])) for item in series)
-    listed = [_compact_event(event) for event in sorted(verbatim.values(), key=lambda item: (item.timestamp, item.event_id))]
-    summary: dict[str, object] = {
-        "total_events": len(ordered), "verbatim_events": len(listed), "condensed_events": condensed, "series": len(series),
-        "note": "Each distinct warning/error (first and last occurrences of repeats) and each series' endpoints are "
-        "listed in events; every other event is in event_series with its values and UTC time, and specialist-cited "
-        "events there are named in cited_event_ids. Cite the series' event IDs when relying on a series.",
-    }
-    return listed, series, summary
+    """Large incidents: distinct warnings/errors stay verbatim; repeats and routine records become value series."""
+    cited = set().union(*(cited_event_ids(item.finding) for item in request.incident.findings)) if request.incident.findings else set()
+    summarized = summarize_events(request.events, cited=cited)
+    return [_compact_event(event) for event in summarized.verbatim], summarized.series, summarized.summary
 
 
 def _compact_incident(request: MainRcaRequest) -> dict[str, object]:
