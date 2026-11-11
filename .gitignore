@@ -27,3 +27,6 @@ data/raw/**
 data/extracted/**
 !data/raw/.gitkeep
 !data/extracted/.gitkeep
+
+# Real incident collections (application logs and metrics) stay local.
+collections/
