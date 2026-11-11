@@ -23,7 +23,41 @@ One JSON object per line with `event`, a timezone-aware `ts`, `service`, and `in
 
 Logs must not contain request bodies, SQL parameters, credentials, or personal data (titles, amounts, names). The converter copies only the fields above, so anything else is dropped even if logged by mistake.
 
-## Collect (read-only, after you start the instance yourself)
+## Collect with one command (read-only)
+
+`scripts/collect_splitwise_incident.py` runs the whole collection for one incident window. Its only AWS calls are a fixed, read-only allowlist:
+- `sts get-caller-identity`
+- `ec2 describe-instances`
+- `ec2 describe-instance-credit-specifications`
+- `cloudwatch get-metric-data`
+
+It then copies the log with `scp`, runs the converter, and writes everything to `collections/<timestamp>/`, which is gitignored:
+- `incident.jsonl`: upload this in the dashboard
+- the raw inputs
+- `manifest.json`: the window, the commands run, per-metric datapoint counts, and SHA-256 hashes of the files
+
+```bash
+# Confirm the identity, instance state, and CPU credit mode; nothing is copied.
+.venv/bin/python scripts/collect_splitwise_incident.py --instance-id i-0123456789abcdef0 --region us-east-1 --check
+
+# Collect a window: the log over SSH (an ~/.ssh/config alias), plus basic EC2 metrics.
+.venv/bin/python scripts/collect_splitwise_incident.py --instance-id i-0123456789abcdef0 --region us-east-1 \
+  --start 2026-11-12T09:40:00Z --end 2026-11-12T10:10:00Z --ssh-host splitwise-ec2
+```
+
+Each run needs a new or empty `--out-dir`. `manifest.json` is written last, so a directory without one is an incomplete collection. The run also stops, without writing a dataset, if any CloudWatch result's `StatusCode` is not `Complete`. `app.jsonl` is the raw log copy: the whole file, including lines outside the window, with any fields the converter would drop. Keep collections private and delete them when the analysis is done.
+
+Use `--app-log` instead of `--ssh-host` for a log you already copied, and `--profile` for a named or SSO profile. Supporting files are in `config/aws/`:
+
+| File | Purpose |
+| --- | --- |
+| `metric_queries.template.json` | Ten free basic-monitoring EC2 metrics: CPU, CPU credits (including `CPUSurplusCreditsCharged`), status checks, EBS balances, write ops and network. One statistic per metric, 300 s period, `${INSTANCE_ID}` filled in. |
+| `cloudrca-collector-readonly-policy.json` | The minimal IAM policy for the laptop identity: the three Describe/Get actions above. `sts:GetCallerIdentity` needs no permission. |
+| `splitwise.service.example` | A systemd unit that runs Splitwise on `127.0.0.1:8000` and logs to `/var/log/splitwise/app.jsonl`. It is reachable only through an SSH tunnel. |
+
+Burstable (`t3`/`t4g`) instances default to **unlimited** CPU credits, which bill for sustained CPU above baseline instead of throttling it. `--check` reports the mode. Switch the instance to **standard** before any CPU-pressure test.
+
+## Collect manually (read-only, after you start the instance yourself)
 
 ```bash
 aws cloudwatch get-metric-data \

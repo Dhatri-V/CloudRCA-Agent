@@ -1,0 +1,12 @@
+[
+  {"Id": "cpu", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "CPUUtilization", "Dimensions": [{"Name": "InstanceId", "Value": "${INSTANCE_ID}"}]}, "Period": 300, "Stat": "Average", "Unit": "Percent"}, "ReturnData": true},
+  {"Id": "credit_balance", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "CPUCreditBalance", "Dimensions": [{"Name": "InstanceId", "Value": "${INSTANCE_ID}"}]}, "Period": 300, "Stat": "Minimum"}, "ReturnData": true},
+  {"Id": "credit_usage", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "CPUCreditUsage", "Dimensions": [{"Name": "InstanceId", "Value": "${INSTANCE_ID}"}]}, "Period": 300, "Stat": "Sum"}, "ReturnData": true},
+  {"Id": "surplus_charged", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "CPUSurplusCreditsCharged", "Dimensions": [{"Name": "InstanceId", "Value": "${INSTANCE_ID}"}]}, "Period": 300, "Stat": "Sum"}, "ReturnData": true},
+  {"Id": "status_instance", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "StatusCheckFailed_Instance", "Dimensions": [{"Name": "InstanceId", "Value": "${INSTANCE_ID}"}]}, "Period": 300, "Stat": "Maximum"}, "ReturnData": true},
+  {"Id": "status_system", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "StatusCheckFailed_System", "Dimensions": [{"Name": "InstanceId", "Value": "${INSTANCE_ID}"}]}, "Period": 300, "Stat": "Maximum"}, "ReturnData": true},
+  {"Id": "ebs_io_balance", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "EBSIOBalance%", "Dimensions": [{"Name": "InstanceId", "Value": "${INSTANCE_ID}"}]}, "Period": 300, "Stat": "Minimum"}, "ReturnData": true},
+  {"Id": "ebs_byte_balance", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "EBSByteBalance%", "Dimensions": [{"Name": "InstanceId", "Value": "${INSTANCE_ID}"}]}, "Period": 300, "Stat": "Minimum"}, "ReturnData": true},
+  {"Id": "ebs_write_ops", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "EBSWriteOps", "Dimensions": [{"Name": "InstanceId", "Value": "${INSTANCE_ID}"}]}, "Period": 300, "Stat": "Sum"}, "ReturnData": true},
+  {"Id": "network_in", "MetricStat": {"Metric": {"Namespace": "AWS/EC2", "MetricName": "NetworkIn", "Dimensions": [{"Name": "InstanceId", "Value": "${INSTANCE_ID}"}]}, "Period": 300, "Stat": "Sum"}, "ReturnData": true}
+]
