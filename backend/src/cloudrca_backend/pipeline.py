@@ -15,6 +15,7 @@ from uuid import uuid4
 import structlog
 from pydantic import ValidationError
 
+from .anomaly_signals import CHECKS, AnomalySignal, anomaly_signals
 from .api import AnalysisResult, ArtifactKind, JobStatus
 from .contracts import EvidenceKind, EvidenceReference, Layer, Severity, TimeWindow, TopologyRelationship
 from .correlation import CorrelationConfig, CorrelationGraph, CrossLayerCorrelator
@@ -75,9 +76,11 @@ class IncidentOutcome(StrEnum):
     SPECIALIST_FAILED = "specialist_failed"
     RCA_FAILED = "rca_failed"
     NOT_ANALYZED = "not_analyzed"
+    NO_ANOMALY = "no_anomaly_detected"
 
 
-SUCCESSFUL_OUTCOMES = frozenset({IncidentOutcome.REPORTED, IncidentOutcome.INSUFFICIENT_EVIDENCE})
+SUCCESSFUL_OUTCOMES = frozenset({IncidentOutcome.REPORTED, IncidentOutcome.INSUFFICIENT_EVIDENCE, IncidentOutcome.NO_ANOMALY})
+MAX_ARTIFACT_SIGNALS = 50
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +92,7 @@ class IncidentAnalysis:
     workflow: SpecialistWorkflowResult | None = None
     graph: CorrelationGraph | None = None
     report: dict[str, object] | None = None
+    signals: tuple[AnomalySignal, ...] | None = None
 
 
 def production_agents(environ: Mapping[str, str] | None = None) -> AnalysisAgents:
@@ -284,6 +288,23 @@ class RcaPipeline:
                 "no root cause was inferred.",
                 workflow, graph,
             )
+        # Application evidence used to send every incident to the main RCA. Without specialist findings, only
+        # deterministic anomaly signals (errors, 5xx, saturation, failed checks) justify asking for a root cause:
+        # a healthy window ends here instead of forcing the model to explain nothing.
+        signals = anomaly_signals(item.event for item in events)
+        if not incident.findings and not signals:
+            checked = f"Deterministic checks found no anomaly in {len(events)} event(s) ({'; '.join(CHECKS)})"
+            if workflow and workflow.status is not WorkflowStatus.SUCCESS:
+                return IncidentAnalysis(
+                    incident, events, IncidentOutcome.SPECIALIST_FAILED,
+                    f"Analysis incomplete: {checked}, but some specialists failed ({', '.join(failed_codes)}).",
+                    workflow, graph, signals=signals,
+                )
+            return IncidentAnalysis(
+                incident, events, IncidentOutcome.NO_ANOMALY,
+                f"No anomaly detected: {checked}, and specialists reported no findings. No root cause analysis was run.",
+                workflow, graph, signals=signals,
+            )
         topology = incident_topology(events)
         try:
             result = agents.main_rca.analyze(
@@ -305,17 +326,18 @@ class RcaPipeline:
             report: dict[str, object] = {**result.report.model_dump(mode="json"), "markdown": render_markdown(context)}
         except MainRcaError as exc:
             return IncidentAnalysis(
-                incident, events, IncidentOutcome.RCA_FAILED, f"Analysis incomplete: main RCA failed ({exc.code.value}).", workflow, graph
+                incident, events, IncidentOutcome.RCA_FAILED, f"Analysis incomplete: main RCA failed ({exc.code.value}).", workflow, graph,
+                signals=signals,
             )
         except (ReportIntegrityError, ValidationError):
             return IncidentAnalysis(
                 incident, events, IncidentOutcome.RCA_FAILED,
-                "Analysis incomplete: the RCA report failed evidence integrity validation.", workflow, graph,
+                "Analysis incomplete: the RCA report failed evidence integrity validation.", workflow, graph, signals=signals,
             )
         explanation = str(result.report.uncertainty or "")
         if workflow and workflow.status is not WorkflowStatus.SUCCESS and not explanation:
             explanation = f"Some specialists failed ({', '.join(failed_codes)})."
-        return IncidentAnalysis(incident, events, IncidentOutcome.REPORTED, explanation, workflow, graph, report)
+        return IncidentAnalysis(incident, events, IncidentOutcome.REPORTED, explanation, workflow, graph, report, signals)
 
     @staticmethod
     def _status(analyses: list[IncidentAnalysis], configuration_error: str | None) -> tuple[JobStatus, str | None]:
@@ -346,6 +368,12 @@ class RcaPipeline:
             "summary": str(report["probable_root_cause"]) if report else analysis.explanation,
             "uncertainty": analysis.explanation or None,
         }
+        if analysis.signals is not None:
+            payload["anomaly_signals"] = {
+                "count": len(analysis.signals),
+                "checks": list(CHECKS),
+                "signals": [signal.as_dict() for signal in analysis.signals[:MAX_ARTIFACT_SIGNALS]],
+            }
         if analysis.workflow is not None:
             payload["specialist_workflow"] = {
                 "status": analysis.workflow.status.value,
