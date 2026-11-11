@@ -184,3 +184,6 @@ def test_the_example_unit_creates_its_log_directory_and_stays_on_localhost() -> 
     unit = (ROOT / "config" / "aws" / "splitwise.service.example").read_text()
     assert "LogsDirectory=splitwise" in unit and "SPLITWISE_LOG_FILE=/var/log/splitwise/app.jsonl" in unit
     assert "--host 127.0.0.1" in unit and "0.0.0.0" not in unit
+    # Matches the deployed instance: the checkout's existing .venv, with a 60 s heartbeat.
+    assert "ExecStart=/home/ec2-user/splitwise-backend/.venv/bin/uvicorn main:app" in unit and "/venv/bin" not in unit
+    assert "SPLITWISE_HEARTBEAT_SECONDS=60" in unit
