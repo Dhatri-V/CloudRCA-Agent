@@ -23,6 +23,8 @@ MARKER = f"{STATE_DIR}/db_lock.active"
 RESTORE_SCRIPT = f"{STATE_DIR}/restore-db.sh"
 UNIT_PREFIX = "cloudrca-fault-"
 SAFETY_RESTORE_UNIT = f"{UNIT_PREFIX}db-safety-restore"
+GUARD_UNIT = f"{UNIT_PREFIX}shutdown-guard"
+WRONG_HOST_EXIT = 97
 FAULT_UNITS = ("traffic", "dblock", "cpu")
 SERVICE = "splitwise.service"
 API = "http://127.0.0.1:8000"
@@ -45,6 +47,15 @@ def _python(body: str, user: str = "ec2-user") -> str:
     return f"sudo -u {user} python3 - <<'PY'\n{body}PY\n"
 
 
+def identity_guard(instance_id: str) -> str:
+    """First lines of every script: refuse to run unless IMDSv2 says this host is the expected instance."""
+    return (
+        "token=$(curl -s -m 3 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' || true)\n"
+        "actual=$(curl -s -m 3 -H \"X-aws-ec2-metadata-token: $token\" http://169.254.169.254/latest/meta-data/instance-id || true)\n"
+        f"if [ \"$actual\" != {shlex.quote(instance_id)} ]; then echo \"wrong host: instance-id '$actual'\" >&2; exit {WRONG_HOST_EXIT}; fi\n"
+    )
+
+
 def unit(name: str) -> str:
     return f"{UNIT_PREFIX}{name}"
 
@@ -55,11 +66,11 @@ def status_script() -> str:
         "set -u\n"
         f"echo service=$(systemctl is-active {SERVICE} || true)\n"
         f"echo api=$(curl -s -o /dev/null -w '%{{http_code}}' -m 5 {API}/expenses || echo 000)\n"
-        f"echo fault_units=$(systemctl list-units --all --no-legend --plain '{UNIT_PREFIX}*' 2>/dev/null | awk '$3==\"active\"{{print $1}}' | paste -sd, -)\n"
+        f"echo fault_units=$(systemctl list-units --all --no-legend --plain '{UNIT_PREFIX}*' 2>/dev/null | awk '$3==\"active\"{{print $1}}' | grep -v '{GUARD_UNIT}' | paste -sd, -)\n"
         "echo burners=$(pgrep -fc '[c]loudrca-burn' || true)\n"
         f"echo marker=$(test -e {MARKER} && echo present || echo absent)\n"
         f"echo db_side_files=$(ls {DB_PATH}-wal {DB_PATH}-shm {DB_PATH}-journal 2>/dev/null | paste -sd, -)\n"
-        "echo shutdown_guard=$(test -e /run/systemd/shutdown/scheduled && echo scheduled || echo none)\n"
+        f"echo shutdown_guard=$(systemctl is-active {GUARD_UNIT}.timer 2>/dev/null || true)\n"
         "echo uptime_s=$(cut -d. -f1 /proc/uptime)\n"
     )
 
@@ -83,6 +94,7 @@ def backup_db_script() -> str:
     )
     return (
         "set -euo pipefail\n"
+        f"if [ -e {MARKER} ]; then echo 'a previous database restore did not complete; refusing to overwrite its backup' >&2; exit 1; fi\n"
         f"sudo install -d -o ec2-user -g ec2-user -m 700 {STATE_DIR}\n"
         f"trap 'sudo systemctl start {SERVICE}' EXIT\n"
         f"sudo systemctl stop {SERVICE}\n"
@@ -167,10 +179,17 @@ def start_traffic(seconds: int, extra: list[tuple[str, str, int]] | None = None,
         "    except Exception:\n"
         "        pass\n"
         "body = {'title': 'cloudrca-fault-suite', 'amount': 1.0, 'paid_by': 'cloudrca-fault-suite'}\n"
+        "def absent(path):\n"
+        "    try:\n"
+        "        return urllib.request.urlopen(API + path, timeout=20).read().strip() == b'null'\n"
+        "    except Exception:\n"
+        "        return False\n"
         "while time.time() < end:\n"
         "    now = time.time()\n"
         "    while plan and start + plan[0][2] <= now:\n"
-        "        method, path, _ = plan.pop(0); call(method, path, body if method in ('PUT', 'POST') else None)\n"
+        "        method, path, _ = plan.pop(0)\n"
+        "        if absent(path):  # never update or delete a real expense\n"
+        "            call(method, path, body if method in ('PUT', 'POST') else None)\n"
         "    if now >= next_get:\n"
         "        call('GET', '/expenses'); next_get = now + 15\n"
         "    if post_every and now >= next_post:\n"
@@ -195,7 +214,7 @@ def start_lock_holder(seconds: int, hold: int = 8, gap: int = 52) -> str:
     return _bounded("dblock", seconds + 30, f"python3 -c {shlex.quote(body)}")
 
 
-def start_cpu_burner(seconds: int, workers: int = 2) -> str:
+def start_cpu_burner(seconds: int, workers: int = 3) -> str:
     """CPU-bound workers named cloudrca-burn; systemd kills the whole control group at RuntimeMaxSec."""
     burn = "exec -a cloudrca-burn python3 -c 'while True: pass'"
     command = "/bin/bash -c " + shlex.quote(" & ".join([f"({burn})"] * int(workers)) + " & wait")
@@ -214,12 +233,25 @@ def stop_faults_script() -> str:
 
 
 def arm_shutdown_guard(minutes: int) -> str:
-    """Power off (instance stops) after ``minutes`` unless cancelled; only used when the suite started the instance."""
-    return f"sudo shutdown -h +{int(minutes)} 'cloudrca fault suite safety guard'\necho shutdown_guard=armed\n"
+    """(Re)arm a timer that, if the suite never cancels it, stops faults, restores the DB if needed, then powers off.
+
+    Only used when the suite started the instance and its shutdown behavior is 'stop'. Re-arming replaces the timer.
+    """
+    names = " ".join(unit(item) for item in FAULT_UNITS)
+    action = (
+        f"for name in {names}; do systemctl stop \"$name\" 2>/dev/null; done; pkill -f '[c]loudrca-burn'; "
+        f"if [ -e {MARKER} ] && [ -x {RESTORE_SCRIPT} ]; then /bin/bash {RESTORE_SCRIPT}; fi; systemctl poweroff"
+    )
+    return (
+        f"sudo systemctl stop {GUARD_UNIT}.timer {GUARD_UNIT}.service 2>/dev/null || true\n"
+        f"sudo systemd-run --unit={GUARD_UNIT} --on-active={int(minutes) * 60}s --timer-property=AccuracySec=1s "
+        f"/bin/bash -c {shlex.quote(action)}\n"
+        "echo shutdown_guard=armed\n"
+    )
 
 
 def cancel_shutdown_guard() -> str:
-    return "sudo shutdown -c 2>/dev/null || true\necho shutdown_guard=cancelled\n"
+    return f"sudo systemctl stop {GUARD_UNIT}.timer {GUARD_UNIT}.service 2>/dev/null || true\necho shutdown_guard=cancelled\n"
 
 
 def verify_recovery_script(expected_db_hash: str | None) -> str:

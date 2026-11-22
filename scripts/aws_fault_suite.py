@@ -95,8 +95,9 @@ def run_shell(command: Sequence[str], stdin: str | None = None) -> str:
 class Executor:
     """The only path to AWS and SSH. Mutations need execute mode and an approval token for that exact action."""
 
-    def __init__(self, shell: Shell, *, execute: bool, readonly_profile: str, operator_profile: str, region: str, ssh_host: str) -> None:
-        self.shell, self.execute = shell, execute
+    def __init__(self, shell: Shell, *, execute: bool, readonly_profile: str, operator_profile: str, region: str, ssh_host: str,
+                 instance_id: str = INSTANCE_ID) -> None:
+        self.shell, self.execute, self.instance_id = shell, execute, instance_id
         self.readonly_profile, self.operator_profile, self.region, self.ssh_host = readonly_profile, operator_profile, region, ssh_host
         self.approved: set[str] = set()
         self.log: list[dict[str, Any]] = []
@@ -127,7 +128,9 @@ class Executor:
             self._allow(approval or "", f"ssh {label or 'script'}")
             self.on_remote_change()
         self.log.append({"kind": "ssh", "mutating": mutating, "label": label})
-        return self.shell(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", self.ssh_host, "bash", "-s"], script)
+        # Every script first proves, on the host itself, that it is the expected instance (exit 97 otherwise).
+        command = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=15", self.ssh_host, "bash", "-s"]
+        return self.shell(command, remote.identity_guard(self.instance_id) + script)
 
     def collector_runner(self, command: Sequence[str]) -> str:
         """Runner for collect_splitwise_incident: it only issues its own read-only allowlist and scp."""
@@ -295,8 +298,8 @@ class FaultSuite:
         if p.problems:
             self.out("Refusing to execute:\n  " + "\n  ".join(p.problems))
             return 1
-        self._approve_setup(p)
         try:
+            self._approve_setup(p)
             self._setup(p)
             for name in self.scenarios:
                 if name != "healthy_precheck":
@@ -316,13 +319,14 @@ class FaultSuite:
         return self._report(p)
 
     def _approve_setup(self, p: Preflight) -> None:
+        self.gate.approve("begin", f"Begin the fault suite on {self.instance_id} (healthy precheck traffic, then one gate per fault)")
+        self.x.approved.add("cleanup")
         if p.ssh_rule_ok is False:
             self.gate.approve("sg", f"Add SSH ingress {p.public_ip}/32 to {self.security_group} (removed at cleanup)")
             self.x.approved.add("sg")
         if p.state == "stopped":
             self.gate.approve("start", f"Start {self.instance_id} and stop it again at cleanup (estimate {self.estimate_seconds(p) / 3600:.1f} h)")
             self.x.approved.update({"start", "stop", "guard"})
-        self.x.approved.add("cleanup")
 
     def _setup(self, p: Preflight) -> None:
         if p.ssh_rule_ok is False:
@@ -335,8 +339,7 @@ class FaultSuite:
             self.state.started_instance = True
             self._wait_status_ok()
             self._update_ssh_host()
-            self.x.ssh(remote.arm_shutdown_guard(self.estimate_seconds(p) // 60 + 30), mutating=True, approval="guard", label="arm shutdown guard")
-            self.state.guard_armed = True
+            self._arm_guard(self.d.boot_settle + 30 * 60)
         status = remote.parse_status(self.x.ssh(remote.status_script(), mutating=False, label="status"))
         if status.get("service") != "active" or status.get("api") != "200":
             raise RuntimeError(f"Splitwise is not healthy before testing: {status}")
@@ -344,6 +347,11 @@ class FaultSuite:
         if uptime < self.d.boot_settle:
             self.out(f"Waiting {self.d.boot_settle - uptime} s for CPU credits to settle after boot")
             self.sleep(self.d.boot_settle - uptime)
+
+    def _arm_guard(self, seconds: int) -> None:
+        """(Re)arm the on-instance guard; it cleans up and powers off only if the suite stops cancelling it."""
+        self.x.ssh(remote.arm_shutdown_guard(max(1, seconds // 60)), mutating=True, approval="guard", label="arm shutdown guard")
+        self.state.guard_armed = True
 
     def _wait_status_ok(self) -> None:
         for _ in range(60):
@@ -367,6 +375,8 @@ class FaultSuite:
 
     def _scenario(self, name: str) -> dict[str, Any]:
         seconds = self.d.scenario(name)
+        if self.state.guard_armed:  # scenario + CloudWatch wait + collection/RCA, with margin
+            self._arm_guard(seconds + self.d.cloudwatch_timeout + 30 * 60)
         start = self.clock()
         if name == "db_lock":
             backup = remote.parse_status(self.x.ssh(remote.backup_db_script(), mutating=True, approval=name, label="verified DB backup"))
@@ -528,7 +538,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     executor = Executor(run_shell, execute=args.execute, readonly_profile=args.readonly_profile, operator_profile=args.operator_profile,
-                        region=REGION, ssh_host=SSH_ALIAS)
+                        region=REGION, ssh_host=SSH_ALIAS, instance_id=INSTANCE_ID)
     suite = FaultSuite(executor, Gate(), scenarios=[item.strip() for item in args.scenarios.split(",") if item.strip()], run_dir=args.run_dir)
     return suite.run()
 

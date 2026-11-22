@@ -110,7 +110,7 @@ set -a; source .env; set +a
 
 **AWS profiles.**
 - `cloudrca-readonly` does all inspection and collection.
-- `cloudrca-operator` is a separate role built from `config/aws/cloudrca-test-operator-policy.json`, created only with approval. It can start and stop this instance and add or remove ingress rules on this security group, nothing else. It explicitly denies terminate, run, modify, and IAM actions.
+- `cloudrca-operator` is a separate role built from `config/aws/cloudrca-test-operator-policy.json`, created only with approval. It can start and stop this instance and add or remove ingress rules on this security group, nothing else. It explicitly denies terminate, run, modify, and IAM actions. Only the console login role may assume it (`config/aws/cloudrca-test-operator-trust.json`; create it with a 1-hour maximum session). IAM cannot restrict which CIDR or port an ingress rule uses, so this role could add any rule to that one security group. The suite adds only `<your IP>/32` on port 22 and removes it at cleanup.
 
 **Expectations.** These are the files in `config/aws/scenarios/*.expected.json`, pinned by SHA-256 in `expectations.lock.json`.
 - The suite refuses to run if a file does not match its lock entry.
@@ -127,7 +127,9 @@ The expectations come from Splitwise `85629fc`, probed locally:
 - **Time limits.** Every fault, and its traffic, runs on the instance as a transient systemd unit with `RuntimeMaxSec`, so it ends even if the laptop, SSH, or the suite dies.
 - **Database backup.** `db_lock` copies `splitwise.db` with SQLite's online backup API and verifies it with `integrity_check` and a logical-dump SHA-256. It also arms an on-instance timer that restores the backup if the suite never clears its marker.
 - **Database restore.** Restoration writes through a SQLite connection, so hot journals roll back and WAL files are checkpointed. It never deletes journal or WAL files by hand.
-- **Instance state.** The instance is stopped at the end only if the suite started it. In that case, an OS shutdown guard is armed in case the laptop disconnects, and only when the instance's shutdown behavior is `stop`.
+- **Instance state.** The instance is stopped at the end only if the suite started it. In that case, an on-instance guard timer is armed. It is re-armed before each scenario and cancelled at cleanup. If the suite stops cancelling it, the guard stops the faults, restores the database if a restore is pending, and only then powers off. The guard is used only when the instance's shutdown behavior is `stop`.
+- **Target.** Every SSH script first checks, through IMDSv2 on the host itself, that it is running on the expected instance. If not, it exits with code 97 before doing anything. SSH uses strict host-key checking.
+- **Real data.** `app_bug` sends `PUT` or `DELETE` only to expense IDs that `GET` shows as absent. A new database backup is refused while an earlier restore is still pending.
 - **Cleanup.** It always runs. Every recovery property is verified, and any incomplete step makes the suite exit with code 2 and list the manual actions needed.
 - **Costs.** Printed costs are estimates, not guarantees.
 
