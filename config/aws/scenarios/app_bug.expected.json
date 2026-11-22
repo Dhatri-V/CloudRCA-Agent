@@ -1,0 +1,31 @@
+{
+  "name": "app_bug",
+  "schema": "cloudrca.fault-suite.expectation/v1",
+  "verified_against": "splitwise-backend 85629fc: behaviour probed locally with its own test client before these expectations were written",
+  "note": "Written before any live run. Changing a file requires updating expectations.lock.json in a reviewed PR; the suite refuses to run otherwise.",
+  "scenario": "PUT and DELETE on expense IDs that do not exist, mixed with normal GET traffic. No data changes.",
+  "expected_outcome": "rca_reported",
+  "expected_hypothesis": {
+    "layer": "application",
+    "component_id": "splitwise-api"
+  },
+  "required_signals": [
+    "severity",
+    "http_5xx"
+  ],
+  "required_errors": [
+    {
+      "reported_by": "application",
+      "error_class": "AttributeError",
+      "message_contains": "'NoneType' object has no attribute 'title'"
+    },
+    {
+      "reported_by": "application",
+      "error_class": "sqlalchemy.orm.exc.UnmappedInstanceError",
+      "message_contains": "is not mapped"
+    }
+  ],
+  "supporting_evidence_kinds": [
+    "app.error"
+  ]
+}

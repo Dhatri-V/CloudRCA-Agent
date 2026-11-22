@@ -89,3 +89,48 @@ Use one log source per event range: passing the same events through both `--app-
 - Window: 15 minutes before the first valid error (or 5xx request) to 5 minutes after the last (`--before-minutes`, `--after-minutes`), or explicit `--start`/`--end`. Without errors and without an explicit window the converter refuses rather than exporting everything.
 - Every valid error becomes its own `app.error` record; only `request` lines are summarized per window (`--window-seconds`, default 60) into counts, 5xx count, writes, p95/max duration, max DB time, and peak in-flight. Summaries carry no per-request details.
 - Errors without `reported_by`, malformed lines, naive timestamps, unknown event types, metric results without a query or an `InstanceId` dimension, and null datapoints are skipped and counted in the report printed to stderr.
+
+## Automated fault suite (dry run by default)
+
+`scripts/aws_fault_suite.py` runs four scenarios against the existing instance, in order:
+- a healthy precheck
+- `app_bug`
+- `db_lock`
+- `vm_pressure`
+
+Each scenario is collected with the read-only role, run through CloudRCA, and graded against expectations frozen before any fault is injected.
+
+```bash
+set -a; source .env; set +a
+.venv/bin/python scripts/aws_fault_suite.py             # dry run: read-only AWS checks and the full plan, no changes
+.venv/bin/python scripts/aws_fault_suite.py --execute   # every AWS change and every fault asks for a typed approval
+```
+
+**Dry run.** The executor refuses every mutating AWS call and every mutating SSH script. `--execute` refuses to run without an interactive terminal.
+
+**AWS profiles.**
+- `cloudrca-readonly` does all inspection and collection.
+- `cloudrca-operator` is a separate role built from `config/aws/cloudrca-test-operator-policy.json`, created only with approval. It can start and stop this instance and add or remove ingress rules on this security group, nothing else. It explicitly denies terminate, run, modify, and IAM actions. Only the console login role may assume it (`config/aws/cloudrca-test-operator-trust.json`; create it with a 1-hour maximum session). IAM cannot restrict which CIDR or port an ingress rule uses, so this role could add any rule to that one security group. The suite adds only `<your IP>/32` on port 22 and removes it at cleanup.
+
+**Expectations.** These are the files in `config/aws/scenarios/*.expected.json`, pinned by SHA-256 in `expectations.lock.json`.
+- The suite refuses to run if a file does not match its lock entry.
+- It copies the exact bytes into the run directory before injecting anything, and verifies them again before grading.
+- To change an expectation, change its file and the lock file in a reviewed PR.
+
+The expectations come from Splitwise `85629fc`, probed locally:
+- `PUT` on a missing expense raises `AttributeError` and returns 500.
+- `DELETE` on a missing expense raises `sqlalchemy.orm.exc.UnmappedInstanceError` and returns 500.
+- A write blocked longer than the 5 s busy timeout raises `OperationalError: database is locked`, reported by the database.
+- `GET` on a missing expense returns `200 null`, so it is not a fault.
+
+**Safety.**
+- **Time limits.** Every fault, and its traffic, runs on the instance as a transient systemd unit with `RuntimeMaxSec`, so it ends even if the laptop, SSH, or the suite dies.
+- **Database backup.** `db_lock` copies `splitwise.db` with SQLite's online backup API and verifies it with `integrity_check` and a logical-dump SHA-256. It also arms an on-instance timer that restores the backup if the suite never clears its marker.
+- **Database restore.** Restoration writes through a SQLite connection, so hot journals roll back and WAL files are checkpointed. It never deletes journal or WAL files by hand.
+- **Instance state.** The instance is stopped at the end only if the suite started it. In that case, an on-instance guard timer is armed. It is re-armed before each scenario and cancelled at cleanup. If the suite stops cancelling it, the guard stops the faults, restores the database if a restore is pending, and only then powers off. The guard is used only when the instance's shutdown behavior is `stop`.
+- **Target.** Every SSH script first checks, through IMDSv2 on the host itself, that it is running on the expected instance. If not, it exits with code 97 before doing anything. SSH uses strict host-key checking.
+- **Real data.** `app_bug` sends `PUT` or `DELETE` only to expense IDs that `GET` shows as absent. A new database backup is refused while an earlier restore is still pending.
+- **Cleanup.** It always runs. Every recovery property is verified, and any incomplete step makes the suite exit with code 2 and list the manual actions needed.
+- **Costs.** Printed costs are estimates, not guarantees.
+
+Results go to `collections/fault-suite-<timestamp>/` (gitignored): `report.md`, `results.json`, and per-scenario collections and RCA artifacts.

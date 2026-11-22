@@ -1,0 +1,9 @@
+{
+  "name": "healthy_precheck",
+  "schema": "cloudrca.fault-suite.expectation/v1",
+  "verified_against": "splitwise-backend 85629fc: behaviour probed locally with its own test client before these expectations were written",
+  "note": "Written before any live run. Changing a file requires updating expectations.lock.json in a reviewed PR; the suite refuses to run otherwise.",
+  "scenario": "No fault: light GET traffic only, starting at least 15 minutes after boot (Standard-mode CPU credits start near zero).",
+  "expected_outcome": "no_anomaly_detected",
+  "forbidden_signals": "any"
+}
