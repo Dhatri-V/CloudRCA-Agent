@@ -243,9 +243,11 @@ def arm_shutdown_guard(minutes: int) -> str:
         f"if [ -e {MARKER} ] && [ -x {RESTORE_SCRIPT} ]; then /bin/bash {RESTORE_SCRIPT}; fi; systemctl poweroff"
     )
     return (
+        "set -euo pipefail\n"
         f"sudo systemctl stop {GUARD_UNIT}.timer {GUARD_UNIT}.service 2>/dev/null || true\n"
         f"sudo systemd-run --unit={GUARD_UNIT} --on-active={int(minutes) * 60}s --timer-property=AccuracySec=1s "
         f"/bin/bash -c {shlex.quote(action)}\n"
+        f"systemctl is-active --quiet {GUARD_UNIT}.timer  # fails the script unless the guard really is armed\n"
         "echo shutdown_guard=armed\n"
     )
 

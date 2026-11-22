@@ -42,6 +42,10 @@ class FakeWorld:
     def __init__(self, *, state: str = "stopped", credits: str = "standard", rule_ip: str = "198.51.100.1", burners: str = "0",
                  host_identity: str = INSTANCE) -> None:
         self.state, self.credits, self.rule_ip, self.burners, self.host_identity = state, credits, rule_ip, burners, host_identity
+        self.rules = [{"SecurityGroupRuleId": "sgr-0preexisting", "IsEgress": False, "FromPort": 22, "CidrIpv4": f"{rule_ip}/32"}]
+        self.ambiguous: set[str] = set()  # operations that take effect in AWS but then fail in the CLI
+        self.failing: set[str] = set()  # operations that fail without effect
+        self.marker = "absent"
         self.now = START
         self.calls: list[tuple[str, ...]] = []
         self.ssh_scripts: list[str] = []
@@ -75,6 +79,7 @@ class FakeWorld:
             Path(command[-1]).write_text("\n".join(json.dumps(item) for item in heartbeats) + "\n")
             return ""
         service, operation = self.operation(command)
+        self.last_args = command
         self.calls.append((service, operation, command[command.index("--profile") + 1]))
         return json.dumps(self.aws(service, operation))
 
@@ -85,7 +90,7 @@ class FakeWorld:
             return "restored_logical_sha256=hash-before\nservice=active\n"
         if "echo service=" in script and "uptime_s" in script:
             expected = re.search(r"expected_db_logical_sha256=(\S+)", script)
-            lines = ["service=active", "api=200", "fault_units=", f"burners={self.burners}", "marker=absent", "uptime_s=99999",
+            lines = ["service=active", "api=200", "fault_units=", f"burners={self.burners}", f"marker={self.marker}", "uptime_s=99999",
                      "db_integrity=ok", "db_logical_sha256=hash-before"]
             if expected:
                 lines.append(f"expected_db_logical_sha256={expected.group(1)}")
@@ -102,17 +107,26 @@ class FakeWorld:
                 "Placement": {"AvailabilityZone": "ap-southeast-2c"}}]}]},
             ("ec2", "describe-instance-credit-specifications"): {"InstanceCreditSpecifications": [{"CpuCredits": self.credits}]},
             ("ec2", "describe-instance-attribute"): {"InstanceInitiatedShutdownBehavior": {"Value": "stop"}},
-            ("ec2", "describe-security-group-rules"): {"SecurityGroupRules": [{"IsEgress": False, "FromPort": 22, "CidrIpv4": f"{self.rule_ip}/32"}]},
+            ("ec2", "describe-security-group-rules"): {"SecurityGroupRules": [dict(rule) for rule in self.rules]},
             ("ec2", "describe-instance-status"): {"InstanceStatuses": [{"InstanceStatus": {"Status": "ok"}, "SystemStatus": {"Status": "ok"}}]},
             ("ec2", "authorize-security-group-ingress"): {"SecurityGroupRules": [{"SecurityGroupRuleId": "sgr-0suiteadded"}]},
             ("ec2", "revoke-security-group-ingress"): {"Return": True},
             ("cloudwatch", "get-metric-data"): {"MetricDataResults": [{"Id": "cpu", "Timestamps": [stamp], "Values": [1.0], "StatusCode": "Complete"}]},
         }
+        if operation in self.failing:
+            raise RuntimeError(f"{operation} failed")
         if (service, operation) == ("ec2", "start-instances"):
             self.state = "running"
-            return {}
-        if (service, operation) == ("ec2", "stop-instances"):
+        elif (service, operation) == ("ec2", "stop-instances"):
             self.state = "stopped"
+        elif (service, operation) == ("ec2", "authorize-security-group-ingress"):
+            self.rules.append({"SecurityGroupRuleId": "sgr-0suiteadded", "IsEgress": False, "FromPort": 22, "CidrIpv4": f"{IP}/32"})
+        elif (service, operation) == ("ec2", "revoke-security-group-ingress"):
+            self.revoked = getattr(self, "revoked", []) + [self.last_args[-1]]
+            self.rules = [rule for rule in self.rules if rule["SecurityGroupRuleId"] not in self.revoked]
+        if operation in self.ambiguous:
+            raise RuntimeError(f"{operation}: connection reset after the request was sent")
+        if operation in {"start-instances", "stop-instances"}:
             return {}
         return dict(replies[(service, operation)])
 
@@ -204,7 +218,10 @@ def test_a_full_run_from_stopped_restores_everything_and_stops_the_instance(tmp_
     assert backup < arm < lock < restore  # verified backup and independent safety restore exist before the lock is held
     arms = [script for script in world.ssh_scripts if f"systemd-run --unit={remote.GUARD_UNIT}" in script]
     assert len(arms) == 1 + 4  # armed after start, re-armed before each of the four scenarios
-    assert any("shutdown_guard=cancelled" in item for item in world.ssh_scripts)  # cancelled at cleanup
+    # The suite started the instance: the guard is left armed until the stop is confirmed (a stop clears it).
+    assert not any(f"systemctl stop {remote.GUARD_UNIT}.timer {remote.GUARD_UNIT}.service 2>/dev/null || true\necho shutdown_guard=cancelled" in item
+                   for item in world.ssh_scripts)
+    assert world.revoked == ["sgr-0suiteadded"]  # only the rule this run added
     report = (tmp_path / "run" / "report.md").read_text()
     assert report.count("PASS") == 4 and "CLEANUP INCOMPLETE" not in report
     for name in ("healthy_precheck", "app_bug", "db_lock", "vm_pressure"):
@@ -418,3 +435,51 @@ def test_only_the_console_login_role_may_assume_the_operator_role() -> None:
     trust = json.loads((Path(__file__).resolve().parents[2] / "config/aws/cloudrca-test-operator-trust.json").read_text())
     [statement] = trust["Statement"]
     assert statement["Action"] == "sts:AssumeRole" and statement["Principal"] == {"AWS": "arn:aws:iam::${ACCOUNT_ID}:role/managed/AccountFullAccessRole"}
+
+
+def test_an_ambiguous_start_is_still_stopped_at_cleanup(tmp_path: Path) -> None:
+    world = FakeWorld(rule_ip=IP)
+    world.ambiguous = {"start-instances"}  # AWS starts it, but the CLI reports a failure
+    built, _ = suite(tmp_path, world, execute=True, gate=typed("begin", "start"), scenarios=[])
+    assert built.run() == 1
+    assert world.state == "stopped" and world.mutating_aws()[-1] == ("ec2", "stop-instances")
+
+
+def test_an_ambiguous_ssh_rule_is_found_and_removed_without_touching_preexisting_rules(tmp_path: Path) -> None:
+    world = FakeWorld()  # the existing rule allows another IP, so the suite must add one for IP
+    world.ambiguous = {"authorize-security-group-ingress"}
+    built, _ = suite(tmp_path, world, execute=True, gate=typed("begin", "sg", "start"), scenarios=[])
+    assert built.run() == 1
+    assert world.revoked == ["sgr-0suiteadded"]
+    assert [rule["SecurityGroupRuleId"] for rule in world.rules] == ["sgr-0preexisting"]
+
+
+def test_a_failed_recovery_stops_further_fault_injection(tmp_path: Path) -> None:
+    world = FakeWorld(state="running", rule_ip=IP, burners="1")
+    built, _ = suite(tmp_path, world, execute=True, gate=typed("begin", "app_bug", "db_lock"), scenarios=["app_bug", "db_lock"])
+    assert built.run() == 2
+    assert not any("/expenses/9000" in script or "src.backup(dst)" in script for script in world.ssh_scripts)
+
+
+def test_the_guard_stays_armed_when_the_stop_fails(tmp_path: Path) -> None:
+    world = FakeWorld(rule_ip=IP)
+    world.failing = {"stop-instances"}
+    built, _ = suite(tmp_path, world, execute=True, gate=typed("begin", "start"), scenarios=[])
+    assert built.run() == 2
+    assert not any("shutdown_guard=cancelled" in script for script in world.ssh_scripts)
+    report = (tmp_path / "run" / "report.md").read_text()
+    assert "stop instance (the suite started it)' failed" in report and "instance is running, expected stopped" in report
+
+
+def test_a_leftover_restore_marker_blocks_the_run_before_any_traffic(tmp_path: Path) -> None:
+    world = FakeWorld(state="running", rule_ip=IP)
+    world.marker = "present"
+    built, _ = suite(tmp_path, world, execute=True, gate=typed("begin", "app_bug"), scenarios=["app_bug"])
+    assert built.run() == 2  # reported as needing manual intervention (marker still present)
+    assert not any("systemd-run --unit=cloudrca-fault-traffic" in script for script in world.ssh_scripts)
+
+
+def test_arming_the_guard_fails_loudly_unless_the_timer_is_active() -> None:
+    guard = remote.arm_shutdown_guard(60)
+    assert guard.startswith("set -euo pipefail\n")
+    assert guard.index(f"systemctl is-active --quiet {remote.GUARD_UNIT}.timer") < guard.index("echo shutdown_guard=armed")

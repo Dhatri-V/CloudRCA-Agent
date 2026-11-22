@@ -171,6 +171,8 @@ class Preflight:
 class RunState:
     started_instance: bool = False
     added_rule_id: str | None = None
+    rule_attempted: bool = False
+    preexisting_rule_ids: frozenset[str] = frozenset()
     guard_armed: bool = False
     db_backup_hash: str | None = None
     db_lock_active: bool = False
@@ -215,6 +217,7 @@ class FaultSuite:
         self.ssh_config = ssh_config
         self.expectations = rca_comparison.freeze(self.scenarios)  # before anything else can happen
         self.state = RunState()
+        self._attempted_ip = ""
         self.x.on_remote_change = lambda: setattr(self.state, "remote_touched", True)
 
     # ---------- read-only ----------
@@ -306,6 +309,9 @@ class FaultSuite:
                     self.gate.approve(name, f"Inject fault '{name}': {self.expectations[name].spec['scenario']}")
                     self.x.approved.add(name)
                 self.state.results.append(self._scenario(name))
+                if self.state.results[-1]["recovery"]:
+                    self.out(f"Recovery after {name} failed; no further faults will be injected.")
+                    break
                 if name == "healthy_precheck" and not self.state.results[-1]["comparison"]["passed"]:
                     self.out("Healthy precheck failed; no faults will be injected.")
                     break
@@ -330,23 +336,46 @@ class FaultSuite:
 
     def _setup(self, p: Preflight) -> None:
         if p.ssh_rule_ok is False:
+            # Record what existed and that we are about to add a rule, so an ambiguous failure can be reconciled.
+            self._attempted_ip = p.public_ip
+            self.state.preexisting_rule_ids = frozenset(str(rule.get("SecurityGroupRuleId")) for rule in self._ssh_rules(p.public_ip))
+            self.state.rule_attempted = True
             result = self.x.aws("ec2", "authorize-security-group-ingress", "--group-id", self.security_group, "--ip-permissions",
                                 f"IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{{CidrIp={p.public_ip}/32,Description=cloudrca-fault-suite}}]",
                                 approval="sg")
             self.state.added_rule_id = (result.get("SecurityGroupRules") or [{}])[0].get("SecurityGroupRuleId")
         if p.state == "stopped":
-            self.x.aws("ec2", "start-instances", "--instance-ids", self.instance_id, approval="start")
+            # Set before dispatch: if the call times out after AWS accepted it, cleanup still stops the instance
+            # (stopping an instance that never started is harmless). An instance that was running is never stopped.
             self.state.started_instance = True
+            self.x.aws("ec2", "start-instances", "--instance-ids", self.instance_id, approval="start")
             self._wait_status_ok()
             self._update_ssh_host()
             self._arm_guard(self.d.boot_settle + 30 * 60)
         status = remote.parse_status(self.x.ssh(remote.status_script(), mutating=False, label="status"))
+        if status.get("marker") == "present":
+            self.state.manual_actions.append(
+                f"a previous db_lock restore did not complete: restore {remote.DB_PATH} from {remote.BACKUP_PATH} "
+                f"(verify against {remote.BACKUP_HASH}), then remove {remote.MARKER}"
+            )
+            raise RuntimeError("a previous db_lock restore did not complete (marker present); no traffic or faults were started")
         if status.get("service") != "active" or status.get("api") != "200":
             raise RuntimeError(f"Splitwise is not healthy before testing: {status}")
         uptime = int(status.get("uptime_s", "0") or 0)
         if uptime < self.d.boot_settle:
             self.out(f"Waiting {self.d.boot_settle - uptime} s for CPU credits to settle after boot")
             self.sleep(self.d.boot_settle - uptime)
+
+    def _ssh_rules(self, ip: str) -> list[dict[str, Any]]:
+        rules = self.x.aws("ec2", "describe-security-group-rules", "--filters", f"Name=group-id,Values={self.security_group}").get("SecurityGroupRules", [])
+        return [rule for rule in rules if not rule.get("IsEgress") and rule.get("FromPort") == 22 and rule.get("CidrIpv4") == f"{ip}/32"]
+
+    def _reconcile_rule(self, ip: str) -> None:
+        """After an ambiguous authorize call, find only the rule this run created (never a preexisting one)."""
+        created = [rule for rule in self._ssh_rules(ip) if str(rule.get("SecurityGroupRuleId")) not in self.state.preexisting_rule_ids]
+        if len(created) > 1:
+            raise RuntimeError(f"cannot tell which SSH rule this run created: {[rule.get('SecurityGroupRuleId') for rule in created]}")
+        self.state.added_rule_id = str(created[0]["SecurityGroupRuleId"]) if created else None
 
     def _arm_guard(self, seconds: int) -> None:
         """(Re)arm the on-instance guard; it cleans up and powers off only if the suite stops cancelling it."""
@@ -460,10 +489,13 @@ class FaultSuite:
             if self.state.db_lock_active:
                 steps.append(("restore database", self._restore_db))
             steps.append(("verify recovery", verify))
-        if self.state.guard_armed:
+        # When the suite started the instance, the guard is NOT cancelled: if the stop below fails, the guard still
+        # powers it off. A confirmed stop clears the guard, because transient systemd timers do not survive a stop.
+        if self.state.guard_armed and not self.state.started_instance:
             steps.append(("cancel shutdown guard", cancel_guard))
-        if self.state.added_rule_id:
-            steps.append(("remove temporary SSH rule", revoke_rule))
+        if self.state.rule_attempted and not self.state.added_rule_id:
+            steps.append(("find the SSH rule this run may have created", lambda: self._reconcile_rule(self._attempted_ip)))
+        steps.append(("remove temporary SSH rule", lambda: revoke_rule() if self.state.added_rule_id else None))
         if self.state.started_instance:
             steps.append(("stop instance (the suite started it)", self._stop_instance))
         for label, action in steps:
