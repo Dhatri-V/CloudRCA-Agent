@@ -1,0 +1,26 @@
+{
+  "name": "db_lock",
+  "schema": "cloudrca.fault-suite.expectation/v1",
+  "verified_against": "splitwise-backend 85629fc: behaviour probed locally with its own test client before these expectations were written",
+  "note": "Written before any live run. Changing a file requires updating expectations.lock.json in a reviewed PR; the suite refuses to run otherwise.",
+  "scenario": "A separate process repeatedly holds a SQLite write lock (BEGIN IMMEDIATE) for 8 s, longer than the app's 5 s busy timeout, while the app serves POST writes. Test rows are discarded by restoring the verified backup.",
+  "expected_outcome": "rca_reported",
+  "expected_hypothesis": {
+    "layer": "database",
+    "component_id": "splitwise-sqlite"
+  },
+  "required_signals": [
+    "severity",
+    "http_5xx"
+  ],
+  "required_errors": [
+    {
+      "reported_by": "database",
+      "error_class": "sqlalchemy.exc.OperationalError",
+      "message_contains": "database is locked"
+    }
+  ],
+  "supporting_evidence_kinds": [
+    "app.error"
+  ]
+}

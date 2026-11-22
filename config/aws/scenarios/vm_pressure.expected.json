@@ -1,0 +1,21 @@
+{
+  "name": "vm_pressure",
+  "schema": "cloudrca.fault-suite.expectation/v1",
+  "verified_against": "splitwise-backend 85629fc: behaviour probed locally with its own test client before these expectations were written",
+  "note": "Written before any live run. Changing a file requires updating expectations.lock.json in a reviewed PR; the suite refuses to run otherwise.",
+  "scenario": "Two CPU-bound processes run until Standard-mode CPU credits are exhausted and the instance is throttled, with light GET traffic.",
+  "expected_outcome": "rca_reported",
+  "expected_hypothesis": {
+    "layer": "vm_guest_os",
+    "component_id": "${INSTANCE_ID}"
+  },
+  "required_signals": [
+    "cpu_credits_exhausted",
+    "load_per_cpu"
+  ],
+  "required_errors": [],
+  "supporting_evidence_kinds": [
+    "aws.cloudwatch.metric",
+    "host.heartbeat"
+  ]
+}
